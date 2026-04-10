@@ -20,6 +20,7 @@ function App() {
   const [scopeFilter, setScopeFilter] = useState('all')
   const [sourceFilter, setSourceFilter] = useState('all')
   const [projectFilter, setProjectFilter] = useState('all')
+  const [conflictOnly, setConflictOnly] = useState(false)
   const [search, setSearch] = useState('')
   const [groupBy, setGroupBy] = useState<GroupBy>('scope')
   const [selectedSkill, setSelectedSkill] = useState<Skill | null>(null)
@@ -56,15 +57,16 @@ function App() {
   )
 
   const applyFilters = useCallback(
-    (overrides?: { scope?: string; source?: string; project?: string; search?: string }) => {
+    (overrides?: { scope?: string; source?: string; project?: string; search?: string; conflictOnly?: boolean }) => {
       filterSkills({
         scope: overrides?.scope ?? scopeFilter,
         source: overrides?.source ?? sourceFilter,
         project: overrides?.project ?? projectFilter,
         search: overrides?.search ?? search,
+        conflictOnly: overrides?.conflictOnly ?? conflictOnly,
       })
     },
-    [filterSkills, scopeFilter, sourceFilter, projectFilter, search],
+    [filterSkills, scopeFilter, sourceFilter, projectFilter, search, conflictOnly],
   )
 
   const handleScopeChange = (v: string) => {
@@ -91,6 +93,12 @@ function App() {
   const handleSearch = (q: string) => {
     setSearch(q)
     applyFilters({ search: q })
+  }
+
+  const handleConflictToggle = () => {
+    const next = !conflictOnly
+    setConflictOnly(next)
+    applyFilters({ conflictOnly: next })
   }
 
   // Keyboard shortcut
@@ -287,6 +295,26 @@ function App() {
                     <span className="text-sm text-slate-500">
                       共 <span className="text-slate-300 font-medium">{skills.length}</span> 个 Skill
                     </span>
+                    {conflicts.length > 0 && (
+                      <button
+                        onClick={handleConflictToggle}
+                        title={conflictOnly ? '显示全部' : '仅显示冲突'}
+                        className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium border transition-all
+                          ${conflictOnly
+                            ? 'bg-amber-500/15 border-amber-500/40 text-amber-300'
+                            : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-amber-300 hover:border-amber-500/30'
+                          }`}
+                      >
+                        <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
+                        <span>冲突 {conflicts.length}</span>
+                        {conflictOnly && (
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                            <line x1="18" y1="6" x2="6" y2="18" />
+                            <line x1="6" y1="6" x2="18" y2="18" />
+                          </svg>
+                        )}
+                      </button>
+                    )}
                   </div>
 
                   <div className="flex items-center gap-1 bg-slate-900 rounded-lg border border-slate-800 p-0.5">

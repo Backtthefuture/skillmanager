@@ -66,7 +66,7 @@ export function useSkills() {
   }, [])
 
   const filterSkills = useCallback(
-    (opts: { scope?: string; source?: string; search?: string; project?: string }) => {
+    (opts: { scope?: string; source?: string; search?: string; project?: string; conflictOnly?: boolean }) => {
       let filtered = [...allSkills]
 
       if (opts.scope && opts.scope !== 'all') {
@@ -77,6 +77,9 @@ export function useSkills() {
       }
       if (opts.project && opts.project !== 'all') {
         filtered = filtered.filter((s) => s.projectPath === opts.project || (opts.project === 'global' && s.scope === 'global'))
+      }
+      if (opts.conflictOnly) {
+        filtered = filtered.filter((s) => s.hasConflict)
       }
       if (opts.search) {
         const q = opts.search.toLowerCase()
