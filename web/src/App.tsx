@@ -24,6 +24,19 @@ function App() {
   const [groupBy, setGroupBy] = useState<GroupBy>('scope')
   const [selectedSkill, setSelectedSkill] = useState<Skill | null>(null)
   const [lastUpdate, setLastUpdate] = useState<string | null>(null)
+  const [sidebarOpen, setSidebarOpen] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('skill-hub:sidebar') !== 'closed'
+    } catch {
+      return true
+    }
+  })
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('skill-hub:sidebar', sidebarOpen ? 'open' : 'closed')
+    } catch {}
+  }, [sidebarOpen])
 
   useEffect(() => {
     scan()
@@ -232,24 +245,49 @@ function App() {
 
             <div className="flex flex-col lg:flex-row gap-6">
               {/* Sidebar */}
-              <Sidebar
-                stats={stats}
-                projects={projects}
-                scopeFilter={scopeFilter}
-                sourceFilter={sourceFilter}
-                projectFilter={projectFilter}
-                onScopeChange={handleScopeChange}
-                onSourceChange={handleSourceChange}
-                onProjectChange={handleProjectChange}
-              />
+              {sidebarOpen && (
+                <Sidebar
+                  stats={stats}
+                  projects={projects}
+                  scopeFilter={scopeFilter}
+                  sourceFilter={sourceFilter}
+                  projectFilter={projectFilter}
+                  onScopeChange={handleScopeChange}
+                  onSourceChange={handleSourceChange}
+                  onProjectChange={handleProjectChange}
+                />
+              )}
 
               {/* Main */}
               <main className="flex-1 min-w-0">
                 {/* Toolbar */}
                 <div className="flex items-center justify-between mb-4">
-                  <span className="text-sm text-slate-500">
-                    共 <span className="text-slate-300 font-medium">{skills.length}</span> 个 Skill
-                  </span>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => setSidebarOpen((v) => !v)}
+                      title={sidebarOpen ? '收起侧边栏' : '展开侧边栏'}
+                      aria-label={sidebarOpen ? '收起侧边栏' : '展开侧边栏'}
+                      className="p-1.5 rounded-md border border-slate-800 bg-slate-900 text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition-all"
+                    >
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        {sidebarOpen ? (
+                          <>
+                            <rect x="3" y="3" width="18" height="18" rx="2" />
+                            <line x1="9" y1="3" x2="9" y2="21" />
+                          </>
+                        ) : (
+                          <>
+                            <line x1="3" y1="12" x2="21" y2="12" />
+                            <line x1="3" y1="6" x2="21" y2="6" />
+                            <line x1="3" y1="18" x2="21" y2="18" />
+                          </>
+                        )}
+                      </svg>
+                    </button>
+                    <span className="text-sm text-slate-500">
+                      共 <span className="text-slate-300 font-medium">{skills.length}</span> 个 Skill
+                    </span>
+                  </div>
 
                   <div className="flex items-center gap-1 bg-slate-900 rounded-lg border border-slate-800 p-0.5">
                     {([
