@@ -2,20 +2,23 @@ import { useEffect, useState, useCallback } from 'react'
 import { useSkills } from './hooks/useSkills'
 import { useWebSocket } from './hooks/useWebSocket'
 import { useTheme } from './hooks/useTheme'
+import { useHealth } from './hooks/useHealth'
 import { StatsBar } from './components/StatsBar'
 import { Sidebar } from './components/Sidebar'
 import { SkillGrid } from './components/SkillGrid'
 import { SkillDetail } from './components/SkillDetail'
 import { Dashboard } from './components/Dashboard'
 import { SimilarView } from './components/SimilarView'
+import { HealthDashboard } from './components/HealthDashboard'
 import type { Skill } from './hooks/useSkills'
 
 type GroupBy = 'none' | 'scope' | 'source' | 'project'
-type View = 'skills' | 'similar' | 'dashboard'
+type View = 'skills' | 'similar' | 'dashboard' | 'health'
 
 function App() {
   const { allSkills, skills, stats, projects, conflicts, loading, error, scan, filterSkills } = useSkills()
   const { theme, toggle: toggleTheme } = useTheme()
+  const { data: healthData, running: healthRunning, loadCached: loadHealth, runCheck } = useHealth()
 
   const [view, setView] = useState<View>('skills')
   const [scopeFilter, setScopeFilter] = useState('all')
@@ -102,6 +105,11 @@ function App() {
     applyFilters({ conflictOnly: next })
   }
 
+  // Load health data when switching to health view
+  useEffect(() => {
+    if (view === 'health') loadHealth()
+  }, [view, loadHealth])
+
   // Keyboard shortcut
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -155,6 +163,14 @@ function App() {
                 }`}
               >
                 仪表盘
+              </button>
+              <button
+                onClick={() => setView('health')}
+                className={`px-3 py-1 rounded-md text-xs transition-all ${
+                  view === 'health' ? 'bg-slate-700 text-slate-200 shadow-sm' : 'text-slate-500 hover:text-slate-300'
+                }`}
+              >
+                健康
               </button>
             </div>
           </div>
@@ -248,6 +264,8 @@ function App() {
           <Dashboard stats={stats} projects={projects} conflicts={conflicts} skills={allSkills} />
         ) : view === 'similar' ? (
           <SimilarView onSkillClick={setSelectedSkill} />
+        ) : view === 'health' ? (
+          <HealthDashboard data={healthData} running={healthRunning} onRunCheck={runCheck} />
         ) : (
           <>
             {/* Mobile search */}

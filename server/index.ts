@@ -9,6 +9,7 @@ import { skillRoutes } from './routes/skills.js'
 import { manageRoutes } from './routes/manage.js'
 import { versionRoutes } from './routes/versions.js'
 import { similarityRoutes } from './routes/similarity.js'
+import { healthRoutes } from './routes/health.js'
 import { startWatcher } from './scanner/watcher.js'
 import { invalidateCache } from './routes/skills.js'
 import { fullScan } from './scanner/discovery.js'
@@ -25,9 +26,10 @@ await app.register(skillRoutes)
 await app.register(manageRoutes)
 await app.register(versionRoutes)
 await app.register(similarityRoutes)
+await app.register(healthRoutes)
 
-// Health check
-app.get('/api/health', async () => ({ status: 'ok' }))
+// Ping check
+app.get('/api/ping', async () => ({ status: 'ok' }))
 
 // WebSocket for real-time updates
 const wsClients = new Set<WebSocket>()
@@ -39,7 +41,7 @@ app.register(async function (fastify) {
   })
 })
 
-function broadcast(data: any) {
+export function broadcast(data: any) {
   const msg = JSON.stringify(data)
   for (const ws of wsClients) {
     if (ws.readyState === 1) {
