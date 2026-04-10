@@ -175,7 +175,7 @@ export function SkillDetail({
             {confirmDelete ? (
               <div className="flex gap-1">
                 <ActionButton onClick={handleDelete} loading={actionLoading === 'delete'} variant="danger">
-                  确认删除
+                  移入回收站
                 </ActionButton>
                 <ActionButton onClick={() => setConfirmDelete(false)}>取消</ActionButton>
               </div>
@@ -183,6 +183,12 @@ export function SkillDetail({
               <ActionButton onClick={() => setConfirmDelete(true)} variant="danger">删除</ActionButton>
             )}
           </div>
+
+          {confirmDelete && (
+            <div className="px-3 py-2 rounded-lg bg-amber-500/10 border border-amber-500/20 text-xs text-amber-300">
+              将移入回收站，7 天内可从「回收站」还原；7 天后自动清除。
+            </div>
+          )}
 
           {/* Copy/Move panel */}
           {showActions && (

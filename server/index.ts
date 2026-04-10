@@ -9,9 +9,11 @@ import { skillRoutes } from './routes/skills.js'
 import { manageRoutes } from './routes/manage.js'
 import { versionRoutes } from './routes/versions.js'
 import { similarityRoutes } from './routes/similarity.js'
+import { trashRoutes } from './routes/trash.js'
 import { startWatcher } from './scanner/watcher.js'
 import { invalidateCache } from './routes/skills.js'
 import { fullScan } from './scanner/discovery.js'
+import { purgeExpired as purgeExpiredTrash } from './trash/store.js'
 import type { WebSocket } from 'ws'
 
 const __filename = fileURLToPath(import.meta.url)
@@ -25,6 +27,7 @@ await app.register(skillRoutes)
 await app.register(manageRoutes)
 await app.register(versionRoutes)
 await app.register(similarityRoutes)
+await app.register(trashRoutes)
 
 // Health check
 app.get('/api/health', async () => ({ status: 'ok' }))
@@ -128,6 +131,14 @@ try {
   const actualPort = await listenWithRetry(basePort)
   const url = `http://localhost:${actualPort}`
 
+  // Purge expired trash entries on startup (best-effort, non-blocking failures)
+  try {
+    const removed = await purgeExpiredTrash()
+    if (removed > 0) {
+      console.log(`\x1b[90m🗑  Purged ${removed} expired trash entr${removed === 1 ? 'y' : 'ies'}\x1b[0m`)
+    }
+  } catch {}
+
   // Run an initial scan so the banner shows real numbers
   let scanSummary = ''
   try {
@@ -150,7 +161,8 @@ try {
   }
   console.log(`🔍 Debug:    \x1b[36m${url}/api/debug\x1b[0m`)
   console.log(scanSummary)
-  console.log(`👀 File watcher active\n`)
+  console.log(`👀 File watcher active`)
+  console.log(`\x1b[90m💡 下次启动直接敲: \x1b[0m\x1b[36mskill-hub\x1b[0m\x1b[90m  (或访问 ${url})\x1b[0m\n`)
 
   if (staticRoot && process.env.SKILL_HUB_NO_OPEN !== '1') {
     const { exec } = await import('child_process')

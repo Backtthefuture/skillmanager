@@ -8,10 +8,11 @@ import { SkillGrid } from './components/SkillGrid'
 import { SkillDetail } from './components/SkillDetail'
 import { Dashboard } from './components/Dashboard'
 import { SimilarView } from './components/SimilarView'
+import { TrashView } from './components/TrashView'
 import type { Skill } from './hooks/useSkills'
 
 type GroupBy = 'none' | 'scope' | 'source' | 'project'
-type View = 'skills' | 'similar' | 'dashboard'
+type View = 'skills' | 'similar' | 'dashboard' | 'trash'
 
 function App() {
   const { allSkills, skills, stats, projects, conflicts, loading, error, scan, filterSkills } = useSkills()
@@ -26,6 +27,7 @@ function App() {
   const [groupBy, setGroupBy] = useState<GroupBy>('scope')
   const [selectedSkill, setSelectedSkill] = useState<Skill | null>(null)
   const [lastUpdate, setLastUpdate] = useState<string | null>(null)
+  const [trashCount, setTrashCount] = useState<number>(0)
   const [sidebarOpen, setSidebarOpen] = useState<boolean>(() => {
     try {
       return localStorage.getItem('skill-hub:sidebar') !== 'closed'
@@ -43,6 +45,19 @@ function App() {
   useEffect(() => {
     scan()
   }, [scan])
+
+  // Fetch trash count for the badge
+  const refreshTrashCount = useCallback(async () => {
+    try {
+      const res = await fetch('/api/trash')
+      const data = await res.json()
+      if (data.ok) setTrashCount((data.items || []).length)
+    } catch {}
+  }, [])
+
+  useEffect(() => {
+    refreshTrashCount()
+  }, [refreshTrashCount])
 
   // WebSocket: auto-refresh on file changes
   useWebSocket(
@@ -156,6 +171,19 @@ function App() {
               >
                 仪表盘
               </button>
+              <button
+                onClick={() => setView('trash')}
+                className={`px-3 py-1 rounded-md text-xs transition-all flex items-center gap-1.5 ${
+                  view === 'trash' ? 'bg-slate-700 text-slate-200 shadow-sm' : 'text-slate-500 hover:text-slate-300'
+                }`}
+              >
+                <span>回收站</span>
+                {trashCount > 0 && (
+                  <span className="inline-flex items-center justify-center min-w-[16px] h-4 px-1 rounded-full bg-amber-500/20 text-amber-300 text-[10px] font-semibold">
+                    {trashCount}
+                  </span>
+                )}
+              </button>
             </div>
           </div>
 
@@ -248,6 +276,13 @@ function App() {
           <Dashboard stats={stats} projects={projects} conflicts={conflicts} skills={allSkills} />
         ) : view === 'similar' ? (
           <SimilarView onSkillClick={setSelectedSkill} />
+        ) : view === 'trash' ? (
+          <TrashView
+            onCountChange={setTrashCount}
+            onRestored={() => {
+              scan()
+            }}
+          />
         ) : (
           <>
             {/* Mobile search */}
@@ -426,11 +461,12 @@ function App() {
             const res = await fetch(`/api/skills/${skill.id}`, {
               method: 'DELETE',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ path: skill.path }),
+              body: JSON.stringify({ path: skill.path, skillName: skill.name }),
             })
             const data = await res.json()
             if (!data.ok) throw new Error(data.error)
             await scan()
+            await refreshTrashCount()
           }}
         />
       )}

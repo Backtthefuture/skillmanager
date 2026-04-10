@@ -4,6 +4,7 @@ import path from 'path'
 import os from 'os'
 import { invalidateCache } from './skills.js'
 import { createSnapshot } from '../versioning/store.js'
+import { moveToTrash } from '../trash/store.js'
 
 const homedir = os.homedir()
 const settingsPath = path.join(homedir, '.claude', 'settings.json')
@@ -169,22 +170,22 @@ export async function manageRoutes(app: FastifyInstance) {
     return { ok: true, targetDir }
   })
 
-  // Delete skill
+  // Delete skill (soft delete → recycle bin; 7-day TTL)
   app.delete<{
     Params: { id: string }
-    Body: { path: string }
-  }>('/api/skills/:id', async (req) => {
+    Body: { path: string; skillName?: string }
+  }>('/api/skills/:id', async (req, reply) => {
     const skillPath = req.body.path
+    const skillName = req.body.skillName
 
-    const stat = await fs.lstat(skillPath)
-    if (stat.isSymbolicLink()) {
-      await fs.unlink(skillPath)
-    } else {
-      await fs.rm(skillPath, { recursive: true })
+    try {
+      const meta = await moveToTrash(skillPath, skillName)
+      invalidateCache()
+      return { ok: true, trashId: meta.id, expiresAt: meta.expiresAt }
+    } catch (err: any) {
+      reply.status(500)
+      return { ok: false, error: err?.message || '删除失败' }
     }
-
-    invalidateCache()
-    return { ok: true }
   })
 }
 
