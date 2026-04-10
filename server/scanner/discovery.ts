@@ -4,7 +4,7 @@ import os from 'os'
 import crypto from 'crypto'
 import { parseSkillMd, listSkillFiles, getSkillMdPath } from './parser.js'
 import { resolveSymlink, identifySource } from './symlink.js'
-import type { Skill, Project, ConflictGroup, ScanResult } from '../types.js'
+import type { Skill, Project, ConflictGroup, ScanResult, ScanPathReport } from '../types.js'
 
 const homedir = os.homedir()
 
@@ -40,11 +40,9 @@ async function scanSkillDir(
   for (const entry of entries) {
     const entryPath = path.join(skillDir, entry.name)
 
-    // Resolve the entry first (might be symlink to a directory)
     const symlinkInfo = await resolveSymlink(entryPath)
     const realPath = symlinkInfo.realPath
 
-    // Check if it's a directory (or symlink to directory)
     let isDir = false
     try {
       const stat = await fs.stat(realPath)
@@ -55,7 +53,6 @@ async function scanSkillDir(
 
     if (!isDir) continue
 
-    // Look for SKILL.md
     const skillMdPath = getSkillMdPath(realPath)
     let skillMdExists = false
     try {
@@ -63,9 +60,7 @@ async function scanSkillDir(
       skillMdExists = true
     } catch {}
 
-    // Also check if there's a .md file directly (some skills are just .md files)
     if (!skillMdExists) {
-      // Check for any .md files in the directory
       const files = await listSkillFiles(realPath)
       if (files.length === 0) continue
     }
@@ -80,9 +75,7 @@ async function scanSkillDir(
         frontmatter = parsed.frontmatter
         content = parsed.content
         rawContent = parsed.rawContent
-      } catch {
-        // If parse fails, still include the skill with basic info
-      }
+      } catch {}
     }
 
     const files = await listSkillFiles(realPath)
@@ -140,16 +133,14 @@ async function getDisabledSkills(): Promise<Set<string>> {
 async function discoverProjects(): Promise<{ name: string; path: string }[]> {
   const projects: { name: string; path: string }[] = []
 
-  // 1. Read ~/.claude/projects/ to find known projects
+  // 1. ~/.claude/projects/ (mangled path dirs)
   const projectsDir = path.join(homedir, '.claude', 'projects')
   try {
     const entries = await fs.readdir(projectsDir, { withFileTypes: true })
     for (const entry of entries) {
       if (!entry.isDirectory()) continue
-      // The directory name is a mangled path like -Users-foo-myproject
       const projectPath = entry.name.replace(/^-/, '/').replace(/-/g, '/')
       if (await dirExists(projectPath)) {
-        // Skip home directory — its skills are already counted as global
         if (projectPath === homedir) continue
         const skillsDir = path.join(projectPath, '.claude', 'skills')
         if (await dirExists(skillsDir)) {
@@ -162,13 +153,19 @@ async function discoverProjects(): Promise<{ name: string; path: string }[]> {
     }
   } catch {}
 
-  // 2. Also scan common directories for .claude/skills
+  // 2. Common project root dirs — expanded list
   const commonDirs = [
     path.join(homedir, 'Documents'),
     path.join(homedir, 'Projects'),
     path.join(homedir, 'Developer'),
     path.join(homedir, 'Code'),
+    path.join(homedir, 'code'),
     path.join(homedir, 'workspace'),
+    path.join(homedir, 'dev'),
+    path.join(homedir, 'Dev'),
+    path.join(homedir, 'work'),
+    path.join(homedir, 'repos'),
+    path.join(homedir, 'src'),
   ]
 
   for (const dir of commonDirs) {
@@ -179,19 +176,63 @@ async function discoverProjects(): Promise<{ name: string; path: string }[]> {
         const projectPath = path.join(dir, entry.name)
         const skillsDir = path.join(projectPath, '.claude', 'skills')
         if (await dirExists(skillsDir)) {
-          // Avoid duplicates
           if (!projects.some((p) => p.path === projectPath)) {
-            projects.push({
-              name: entry.name,
-              path: projectPath,
-            })
+            projects.push({ name: entry.name, path: projectPath })
           }
         }
       }
     } catch {}
   }
 
+  // 3. CWD + walk up 3 levels
+  let cwd = process.cwd()
+  for (let i = 0; i < 4; i++) {
+    const skillsDir = path.join(cwd, '.claude', 'skills')
+    if (await dirExists(skillsDir)) {
+      if (!projects.some((p) => p.path === cwd)) {
+        projects.push({ name: path.basename(cwd) + ' (cwd)', path: cwd })
+      }
+    }
+    const parent = path.dirname(cwd)
+    if (parent === cwd) break
+    cwd = parent
+  }
+
   return projects
+}
+
+/**
+ * Find every `skills/` directory inside ~/.claude/plugins (recursively, shallow).
+ * Claude Code plugins can put skills at varying depths, so we walk up to 4 levels.
+ */
+async function discoverPluginSkillDirs(): Promise<string[]> {
+  const result: string[] = []
+  const pluginsRoot = path.join(homedir, '.claude', 'plugins')
+
+  async function walk(dir: string, depth: number) {
+    if (depth > 4) return
+    let entries: Awaited<ReturnType<typeof fs.readdir>>
+    try {
+      entries = await fs.readdir(dir, { withFileTypes: true })
+    } catch {
+      return
+    }
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue
+      if (entry.name === 'node_modules' || entry.name.startsWith('.git')) continue
+      const sub = path.join(dir, entry.name)
+      if (entry.name === 'skills') {
+        result.push(sub)
+        continue
+      }
+      await walk(sub, depth + 1)
+    }
+  }
+
+  if (await dirExists(pluginsRoot)) {
+    await walk(pluginsRoot, 0)
+  }
+  return result
 }
 
 function detectConflicts(skills: Skill[]): ConflictGroup[] {
@@ -212,22 +253,77 @@ function detectConflicts(skills: Skill[]): ConflictGroup[] {
   return conflicts
 }
 
+function parseExtraPaths(): string[] {
+  const raw = process.env.SKILL_HUB_EXTRA_PATHS
+  if (!raw) return []
+  return raw
+    .split(/[:,]/)
+    .map((p) => p.trim())
+    .filter(Boolean)
+    .map((p) => (p.startsWith('~') ? path.join(homedir, p.slice(1)) : p))
+}
+
 export async function fullScan(): Promise<ScanResult> {
+  const start = Date.now()
   const disabledSkills = await getDisabledSkills()
   const allSkills: Skill[] = []
+  const scannedPaths: ScanPathReport[] = []
 
-  // 1. Scan global skills
-  const globalDir = path.join(homedir, '.claude', 'skills')
-  const globalSkills = await scanSkillDir(globalDir, 'global', undefined, undefined, disabledSkills)
-  allSkills.push(...globalSkills)
+  async function scanAndReport(
+    label: string,
+    dir: string,
+    scope: 'global' | 'project' | 'plugin',
+    projectName?: string,
+    projectPath?: string,
+  ) {
+    const exists = await dirExists(dir)
+    if (!exists) {
+      scannedPaths.push({ label, path: dir, exists: false, count: 0 })
+      return []
+    }
+    try {
+      const skills = await scanSkillDir(dir, scope, projectName, projectPath, disabledSkills)
+      scannedPaths.push({ label, path: dir, exists: true, count: skills.length })
+      return skills
+    } catch (e: any) {
+      scannedPaths.push({
+        label,
+        path: dir,
+        exists: true,
+        count: 0,
+        error: e?.message || String(e),
+      })
+      return []
+    }
+  }
 
-  // 2. Discover and scan project-level skills
+  // 1. Global skills
+  allSkills.push(
+    ...(await scanAndReport('global', path.join(homedir, '.claude', 'skills'), 'global')),
+  )
+
+  // 2. Plugin skills — scan every skills/ dir under ~/.claude/plugins/
+  const pluginSkillDirs = await discoverPluginSkillDirs()
+  for (const pluginDir of pluginSkillDirs) {
+    const pluginName = path.relative(path.join(homedir, '.claude', 'plugins'), pluginDir)
+    allSkills.push(
+      ...(await scanAndReport(`plugin:${pluginName}`, pluginDir, 'plugin')),
+    )
+  }
+
+  // 3. Project skills
   const discoveredProjects = await discoverProjects()
   const projects: Project[] = []
 
   for (const proj of discoveredProjects) {
     const skillsDir = path.join(proj.path, '.claude', 'skills')
-    const projectSkills = await scanSkillDir(skillsDir, 'project', proj.name, proj.path, disabledSkills)
+    const projectSkills = await scanAndReport(
+      `project:${proj.name}`,
+      skillsDir,
+      'project',
+      proj.name,
+      proj.path,
+    )
     allSkills.push(...projectSkills)
     projects.push({
       name: proj.name,
@@ -236,24 +332,40 @@ export async function fullScan(): Promise<ScanResult> {
     })
   }
 
-  // 3. Detect conflicts
-  const conflicts = detectConflicts(allSkills)
+  // 4. Extra paths from SKILL_HUB_EXTRA_PATHS
+  for (const extra of parseExtraPaths()) {
+    allSkills.push(
+      ...(await scanAndReport(`extra:${path.basename(extra)}`, extra, 'project')),
+    )
+  }
 
-  // 4. Compute stats
-  const bySource: Record<string, number> = {}
+  // Deduplicate by realPath (symlinks can point to the same skill from multiple roots)
+  const seen = new Set<string>()
+  const dedupedSkills: Skill[] = []
   for (const s of allSkills) {
+    if (seen.has(s.realPath)) continue
+    seen.add(s.realPath)
+    dedupedSkills.push(s)
+  }
+
+  const conflicts = detectConflicts(dedupedSkills)
+
+  const bySource: Record<string, number> = {}
+  for (const s of dedupedSkills) {
     bySource[s.source] = (bySource[s.source] || 0) + 1
   }
 
   return {
-    skills: allSkills,
+    skills: dedupedSkills,
     projects,
     conflicts,
     stats: {
-      total: allSkills.length,
-      global: allSkills.filter((s) => s.scope === 'global').length,
-      project: allSkills.filter((s) => s.scope === 'project').length,
+      total: dedupedSkills.length,
+      global: dedupedSkills.filter((s) => s.scope === 'global').length,
+      project: dedupedSkills.filter((s) => s.scope === 'project').length,
       bySource,
     },
+    scannedPaths,
+    durationMs: Date.now() - start,
   }
 }

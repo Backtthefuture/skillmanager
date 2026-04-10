@@ -43,6 +43,14 @@ export interface ConflictGroup {
   skills: Skill[]
 }
 
+export interface ScanPathReport {
+  label: string
+  path: string
+  exists: boolean
+  count: number
+  error?: string
+}
+
 export interface ScanResult {
   skills: Skill[]
   projects: Project[]
@@ -53,4 +61,6 @@ export interface ScanResult {
     project: number
     bySource: Record<string, number>
   }
+  scannedPaths: ScanPathReport[]
+  durationMs: number
 }

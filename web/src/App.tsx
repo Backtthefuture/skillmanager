@@ -194,8 +194,22 @@ function App() {
         )}
 
         {error && (
-          <div className="mb-4 p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-sm">
-            {error}
+          <div className="mb-4 p-4 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-sm">
+            <div className="font-semibold mb-2">扫描失败：{error}</div>
+            <div className="text-xs text-red-300/80">
+              排查步骤：
+              <ol className="list-decimal list-inside mt-1 space-y-0.5">
+                <li>访问 <a href="/api/debug" target="_blank" rel="noreferrer" className="underline">/api/debug</a> 查看服务端状态</li>
+                <li>打开浏览器 DevTools Console 看是否有网络错误</li>
+                <li>检查终端日志是否有 Node 错误</li>
+              </ol>
+            </div>
+            <button
+              onClick={scan}
+              className="mt-3 px-3 py-1.5 bg-red-500/20 hover:bg-red-500/30 rounded text-red-200 text-xs"
+            >
+              重试扫描
+            </button>
           </div>
         )}
 

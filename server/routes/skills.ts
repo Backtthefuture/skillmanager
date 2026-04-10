@@ -1,8 +1,13 @@
 import type { FastifyInstance } from 'fastify'
+import os from 'os'
 import { fullScan } from '../scanner/discovery.js'
 import type { ScanResult } from '../types.js'
 
 let cachedResult: ScanResult | null = null
+
+export function getCachedResult(): ScanResult | null {
+  return cachedResult
+}
 
 export async function skillRoutes(app: FastifyInstance) {
   // Trigger full scan
@@ -74,6 +79,30 @@ export async function skillRoutes(app: FastifyInstance) {
       cachedResult = await fullScan()
     }
     return cachedResult.stats
+  })
+
+  // Diagnostic endpoint — useful for debugging "only found 1 skill" reports
+  app.get('/api/debug', async () => {
+    if (!cachedResult) {
+      cachedResult = await fullScan()
+    }
+    return {
+      version: '1.0.0',
+      node: process.version,
+      platform: process.platform,
+      cwd: process.cwd(),
+      homedir: os.homedir(),
+      env: {
+        SKILL_HUB_EXTRA_PATHS: process.env.SKILL_HUB_EXTRA_PATHS || null,
+        PORT: process.env.PORT || null,
+      },
+      scan: {
+        durationMs: cachedResult.durationMs,
+        totalSkills: cachedResult.stats.total,
+        scannedPaths: cachedResult.scannedPaths,
+      },
+      stats: cachedResult.stats,
+    }
   })
 }
 

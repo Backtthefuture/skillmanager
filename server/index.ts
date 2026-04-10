@@ -10,6 +10,7 @@ import { manageRoutes } from './routes/manage.js'
 import { versionRoutes } from './routes/versions.js'
 import { startWatcher } from './scanner/watcher.js'
 import { invalidateCache } from './routes/skills.js'
+import { fullScan } from './scanner/discovery.js'
 import type { WebSocket } from 'ws'
 
 const __filename = fileURLToPath(import.meta.url)
@@ -89,20 +90,66 @@ if (staticRoot) {
   })
 }
 
-const PORT = parseInt(process.env.PORT || '3456')
+// Startup self-check: warn loudly if frontend is missing
+if (!staticRoot) {
+  console.warn(
+    '\n\x1b[33m⚠️  Frontend build not found. Running in API-only mode.\x1b[0m',
+  )
+  console.warn(
+    '   Looked in:\n   - ' + candidates.join('\n   - '),
+  )
+  console.warn('   Run `npm run build` in the package directory.\n')
+}
+
+// Try a range of ports on EADDRINUSE so a stale process doesn't brick startup.
+async function listenWithRetry(startPort: number): Promise<number> {
+  const maxAttempts = 5
+  for (let i = 0; i < maxAttempts; i++) {
+    const port = startPort + i
+    try {
+      await app.listen({ port, host: '127.0.0.1' })
+      return port
+    } catch (err: any) {
+      if (err?.code === 'EADDRINUSE' && i < maxAttempts - 1) {
+        console.warn(`\x1b[33m⚠️  Port ${port} in use, trying ${port + 1}...\x1b[0m`)
+        continue
+      }
+      throw err
+    }
+  }
+  throw new Error(`All ports ${startPort}-${startPort + maxAttempts - 1} in use`)
+}
+
+const basePort = parseInt(process.env.PORT || '3456')
 
 try {
-  await app.listen({ port: PORT, host: '127.0.0.1' })
-  const url = `http://localhost:${PORT}`
+  const actualPort = await listenWithRetry(basePort)
+  const url = `http://localhost:${actualPort}`
+
+  // Run an initial scan so the banner shows real numbers
+  let scanSummary = ''
+  try {
+    const result = await fullScan()
+    const paths = result.scannedPaths
+    const foundPaths = paths.filter((p) => p.count > 0)
+    scanSummary =
+      `\x1b[32m✅ Found ${result.stats.total} skills\x1b[0m ` +
+      `(${foundPaths.length}/${paths.length} locations, ${result.durationMs}ms)`
+    if (result.stats.total === 0) {
+      scanSummary += '\n\x1b[33m⚠️  No skills found. Run `curl ' + url + '/api/debug` to see scanned paths.\x1b[0m'
+    }
+  } catch (e: any) {
+    scanSummary = `\x1b[31m❌ Initial scan failed: ${e?.message || e}\x1b[0m`
+  }
+
   console.log(`\n🚀 Claude Skill Hub running at \x1b[36m${url}\x1b[0m`)
   if (staticRoot) {
-    console.log(`🌐 Web UI: \x1b[36m${url}\x1b[0m`)
-  } else {
-    console.log(`📡 API-only mode (no frontend built)`)
+    console.log(`🌐 Web UI:   \x1b[36m${url}\x1b[0m`)
   }
+  console.log(`🔍 Debug:    \x1b[36m${url}/api/debug\x1b[0m`)
+  console.log(scanSummary)
   console.log(`👀 File watcher active\n`)
 
-  // Auto-open browser unless explicitly disabled
   if (staticRoot && process.env.SKILL_HUB_NO_OPEN !== '1') {
     const { exec } = await import('child_process')
     const cmd = process.platform === 'darwin' ? 'open'
@@ -111,6 +158,6 @@ try {
     exec(`${cmd} ${url}`, () => {})
   }
 } catch (err) {
-  console.error('Failed to start server:', err)
+  console.error('\x1b[31m❌ Failed to start server:\x1b[0m', err)
   process.exit(1)
 }
