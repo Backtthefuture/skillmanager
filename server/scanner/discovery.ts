@@ -12,6 +12,41 @@ function makeId(p: string): string {
   return crypto.createHash('md5').update(p).digest('hex').slice(0, 12)
 }
 
+/**
+ * YAML frontmatter can legitimately parse `name` / `description` / `model`
+ * fields as non-string values (numbers, booleans, objects, arrays). If we let
+ * those through, React renders them and throws error #31. Force-coerce every
+ * value that the UI is going to render.
+ */
+function toSafeString(v: unknown): string {
+  if (v == null) return ''
+  if (typeof v === 'string') return v
+  if (typeof v === 'number' || typeof v === 'boolean') return String(v)
+  if (Array.isArray(v)) return v.map(toSafeString).join(', ')
+  if (typeof v === 'object') {
+    try {
+      return JSON.stringify(v)
+    } catch {
+      return '[object]'
+    }
+  }
+  return String(v)
+}
+
+function sanitizeFrontmatter(fm: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = {}
+  for (const [k, v] of Object.entries(fm)) {
+    // Keep arrays/objects as-is for fields the UI treats as data (e.g. `paths`),
+    // but coerce the ones we know get rendered as plain text.
+    if (k === 'name' || k === 'description' || k === 'model' || k === 'effort' || k === 'agent' || k === 'context') {
+      out[k] = toSafeString(v)
+    } else {
+      out[k] = v
+    }
+  }
+  return out
+}
+
 async function dirExists(p: string): Promise<boolean> {
   try {
     const s = await fs.stat(p)
@@ -89,8 +124,9 @@ async function scanSkillDir(
       lastModified = stat.mtime.toISOString()
     } catch {}
 
-    const skillName = (frontmatter as any).name || entry.name
-    const description = (frontmatter as any).description || ''
+    const safeFrontmatter = sanitizeFrontmatter(frontmatter as Record<string, unknown>)
+    const skillName = toSafeString((safeFrontmatter as any).name) || entry.name
+    const description = toSafeString((safeFrontmatter as any).description)
 
     skills.push({
       id: makeId(entryPath),
@@ -103,8 +139,8 @@ async function scanSkillDir(
       symlinkTarget: symlinkInfo.isSymlink ? symlinkInfo.target : undefined,
       projectName,
       projectPath,
-      frontmatter: frontmatter as any,
-      content: rawContent || content,
+      frontmatter: safeFrontmatter as any,
+      content: toSafeString(rawContent || content),
       files,
       enabled: disabledSkills ? !disabledSkills.has(skillName) : true,
       hasConflict: false,

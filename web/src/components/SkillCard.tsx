@@ -6,7 +6,21 @@ interface SkillCardProps {
   onClick?: (skill: Skill) => void
 }
 
+function asText(v: unknown): string {
+  if (v == null) return ''
+  if (typeof v === 'string') return v
+  if (typeof v === 'number' || typeof v === 'boolean') return String(v)
+  try {
+    return JSON.stringify(v)
+  } catch {
+    return '[object]'
+  }
+}
+
 export function SkillCard({ skill, onClick }: SkillCardProps) {
+  const name = asText(skill.name)
+  const description = asText(skill.description)
+  const model = asText(skill.frontmatter?.model)
   return (
     <div
       onClick={() => onClick?.(skill)}
@@ -24,7 +38,7 @@ export function SkillCard({ skill, onClick }: SkillCardProps) {
       {/* Header */}
       <div className="flex items-start justify-between mb-2 gap-2">
         <h3 className="text-sm font-semibold text-slate-100 group-hover:text-indigo-400 transition-colors truncate">
-          /{skill.name}
+          /{name}
         </h3>
         <div className="flex gap-1 shrink-0">
           <ScopeBadge scope={skill.scope} />
@@ -33,7 +47,7 @@ export function SkillCard({ skill, onClick }: SkillCardProps) {
 
       {/* Description */}
       <p className="text-xs text-slate-400 line-clamp-2 mb-3 leading-relaxed min-h-[2.5rem]">
-        {skill.description || '无描述'}
+        {description || '无描述'}
       </p>
 
       {/* Footer */}
@@ -46,8 +60,8 @@ export function SkillCard({ skill, onClick }: SkillCardProps) {
           {!skill.enabled && (
             <span className="text-red-400/80 text-[11px]">禁用</span>
           )}
-          {skill.frontmatter.model && (
-            <span className="text-slate-500">{skill.frontmatter.model}</span>
+          {model && (
+            <span className="text-slate-500">{model}</span>
           )}
         </div>
       </div>
