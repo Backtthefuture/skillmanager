@@ -1,10 +1,12 @@
 import { useState, useCallback } from 'react'
+import type { AgentId } from '../agents'
 
 export interface Skill {
   id: string
   name: string
   description: string
   scope: 'global' | 'project' | 'plugin'
+  agent: AgentId
   source: 'local' | 'newmax' | 'agents' | 'symlink' | 'unknown'
   path: string
   realPath: string
@@ -24,6 +26,7 @@ export interface Stats {
   global: number
   project: number
   bySource: Record<string, number>
+  byAgent: Record<string, number>
 }
 
 export interface Project {
@@ -40,7 +43,7 @@ export interface ConflictGroup {
 export function useSkills() {
   const [allSkills, setAllSkills] = useState<Skill[]>([])
   const [skills, setSkills] = useState<Skill[]>([])
-  const [stats, setStats] = useState<Stats>({ total: 0, global: 0, project: 0, bySource: {} })
+  const [stats, setStats] = useState<Stats>({ total: 0, global: 0, project: 0, bySource: {}, byAgent: {} })
   const [projects, setProjects] = useState<Project[]>([])
   const [conflicts, setConflicts] = useState<ConflictGroup[]>([])
   const [loading, setLoading] = useState(false)
@@ -66,7 +69,7 @@ export function useSkills() {
   }, [])
 
   const filterSkills = useCallback(
-    (opts: { scope?: string; source?: string; search?: string; project?: string; conflictOnly?: boolean }) => {
+    (opts: { scope?: string; source?: string; agent?: string; search?: string; project?: string; conflictOnly?: boolean }) => {
       let filtered = [...allSkills]
 
       if (opts.scope && opts.scope !== 'all') {
@@ -74,6 +77,9 @@ export function useSkills() {
       }
       if (opts.source && opts.source !== 'all') {
         filtered = filtered.filter((s) => s.source === opts.source)
+      }
+      if (opts.agent && opts.agent !== 'all') {
+        filtered = filtered.filter((s) => s.agent === opts.agent)
       }
       if (opts.project && opts.project !== 'all') {
         filtered = filtered.filter((s) => s.projectPath === opts.project || (opts.project === 'global' && s.scope === 'global'))

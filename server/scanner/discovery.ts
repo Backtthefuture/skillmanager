@@ -4,6 +4,13 @@ import os from 'os'
 import crypto from 'crypto'
 import { parseSkillMd, listSkillFiles, getSkillMdPath } from './parser.js'
 import { resolveSymlink, identifySource } from './symlink.js'
+import {
+  AGENTS,
+  allAgentGlobalAbsPaths,
+  allAgentProjectRelPaths,
+  isValidAgentId,
+  type AgentId,
+} from './agents.js'
 import type { Skill, Project, ConflictGroup, ScanResult, ScanPathReport } from '../types.js'
 
 const homedir = os.homedir()
@@ -59,6 +66,7 @@ async function dirExists(p: string): Promise<boolean> {
 async function scanSkillDir(
   skillDir: string,
   scope: 'global' | 'project' | 'plugin',
+  agent: AgentId,
   projectName?: string,
   projectPath?: string,
   disabledSkills?: Set<string>,
@@ -128,11 +136,16 @@ async function scanSkillDir(
     const skillName = toSafeString((safeFrontmatter as any).name) || entry.name
     const description = toSafeString((safeFrontmatter as any).description)
 
+    // Frontmatter `agent:` overrides the path-based guess when it's a known id.
+    const fmAgent = toSafeString((safeFrontmatter as any).agent).toLowerCase().trim()
+    const resolvedAgent: AgentId = fmAgent && isValidAgentId(fmAgent) ? fmAgent : agent
+
     skills.push({
       id: makeId(entryPath),
       name: skillName,
       description,
       scope,
+      agent: resolvedAgent,
       source,
       path: entryPath,
       realPath,
@@ -166,10 +179,17 @@ async function getDisabledSkills(): Promise<Set<string>> {
   return disabled
 }
 
+async function hasAnyAgentSkills(projectRoot: string): Promise<boolean> {
+  for (const rel of allAgentProjectRelPaths()) {
+    if (await dirExists(path.join(projectRoot, rel))) return true
+  }
+  return false
+}
+
 async function discoverProjects(): Promise<{ name: string; path: string }[]> {
   const projects: { name: string; path: string }[] = []
 
-  // 1. ~/.claude/projects/ (mangled path dirs)
+  // 1. ~/.claude/projects/ (mangled path dirs — Claude tracks projects it's been opened in)
   const projectsDir = path.join(homedir, '.claude', 'projects')
   try {
     const entries = await fs.readdir(projectsDir, { withFileTypes: true })
@@ -178,8 +198,7 @@ async function discoverProjects(): Promise<{ name: string; path: string }[]> {
       const projectPath = entry.name.replace(/^-/, '/').replace(/-/g, '/')
       if (await dirExists(projectPath)) {
         if (projectPath === homedir) continue
-        const skillsDir = path.join(projectPath, '.claude', 'skills')
-        if (await dirExists(skillsDir)) {
+        if (await hasAnyAgentSkills(projectPath)) {
           projects.push({
             name: path.basename(projectPath),
             path: projectPath,
@@ -210,8 +229,7 @@ async function discoverProjects(): Promise<{ name: string; path: string }[]> {
       for (const entry of entries) {
         if (!entry.isDirectory()) continue
         const projectPath = path.join(dir, entry.name)
-        const skillsDir = path.join(projectPath, '.claude', 'skills')
-        if (await dirExists(skillsDir)) {
+        if (await hasAnyAgentSkills(projectPath)) {
           if (!projects.some((p) => p.path === projectPath)) {
             projects.push({ name: entry.name, path: projectPath })
           }
@@ -223,8 +241,7 @@ async function discoverProjects(): Promise<{ name: string; path: string }[]> {
   // 3. CWD + walk up 3 levels
   let cwd = process.cwd()
   for (let i = 0; i < 4; i++) {
-    const skillsDir = path.join(cwd, '.claude', 'skills')
-    if (await dirExists(skillsDir)) {
+    if (await hasAnyAgentSkills(cwd)) {
       if (!projects.some((p) => p.path === cwd)) {
         projects.push({ name: path.basename(cwd) + ' (cwd)', path: cwd })
       }
@@ -238,12 +255,39 @@ async function discoverProjects(): Promise<{ name: string; path: string }[]> {
 }
 
 /**
- * Find every `skills/` directory inside ~/.claude/plugins (recursively, shallow).
- * Claude Code plugins can put skills at varying depths, so we walk up to 4 levels.
+ * Find every `skills/` directory that belongs to a plugin the user has
+ * actually enabled.
+ *
+ * Claude Code tracks enabled plugins in ~/.claude/plugins/config.json under
+ * `repositories`. Anything living only under ~/.claude/plugins/marketplaces/
+ * is a *candidate* from a marketplace — Claude Code does not load those, they
+ * are just the source catalog. Earlier versions of this scanner walked the
+ * entire plugins/ tree and reported those candidates as installed plugin
+ * skills, which was very confusing for users who had never enabled a plugin.
  */
 async function discoverPluginSkillDirs(): Promise<string[]> {
   const result: string[] = []
   const pluginsRoot = path.join(homedir, '.claude', 'plugins')
+  const configPath = path.join(pluginsRoot, 'config.json')
+
+  // Extract installLocation of every enabled plugin.
+  const installLocations: string[] = []
+  try {
+    const raw = await fs.readFile(configPath, 'utf-8')
+    const config = JSON.parse(raw) as { repositories?: Record<string, unknown> }
+    const repos = config?.repositories || {}
+    for (const meta of Object.values(repos)) {
+      if (meta && typeof meta === 'object') {
+        const loc = (meta as { installLocation?: unknown }).installLocation
+        if (typeof loc === 'string' && loc.length > 0) {
+          installLocations.push(loc)
+        }
+      }
+    }
+  } catch {}
+
+  // No plugins enabled → nothing to scan. Skip the marketplace catalog entirely.
+  if (installLocations.length === 0) return result
 
   async function walk(dir: string, depth: number) {
     if (depth > 4) return
@@ -265,9 +309,14 @@ async function discoverPluginSkillDirs(): Promise<string[]> {
     }
   }
 
-  if (await dirExists(pluginsRoot)) {
-    await walk(pluginsRoot, 0)
+  // Only walk inside each enabled plugin's install location, not the whole
+  // plugins/ tree.
+  for (const loc of installLocations) {
+    if (await dirExists(loc)) {
+      await walk(loc, 0)
+    }
   }
+
   return result
 }
 
@@ -309,6 +358,7 @@ export async function fullScan(): Promise<ScanResult> {
     label: string,
     dir: string,
     scope: 'global' | 'project' | 'plugin',
+    agent: AgentId,
     projectName?: string,
     projectPath?: string,
   ) {
@@ -318,7 +368,7 @@ export async function fullScan(): Promise<ScanResult> {
       return []
     }
     try {
-      const skills = await scanSkillDir(dir, scope, projectName, projectPath, disabledSkills)
+      const skills = await scanSkillDir(dir, scope, agent, projectName, projectPath, disabledSkills)
       scannedPaths.push({ label, path: dir, exists: true, count: skills.length })
       return skills
     } catch (e: any) {
@@ -333,45 +383,54 @@ export async function fullScan(): Promise<ScanResult> {
     }
   }
 
-  // 1. Global skills
-  allSkills.push(
-    ...(await scanAndReport('global', path.join(homedir, '.claude', 'skills'), 'global')),
-  )
+  // 1. Global skills — loop over every agent's global paths
+  for (const { agent, path: globalDir } of allAgentGlobalAbsPaths(homedir)) {
+    allSkills.push(
+      ...(await scanAndReport(`global:${agent.id}`, globalDir, 'global', agent.id)),
+    )
+  }
 
-  // 2. Plugin skills — scan every skills/ dir under ~/.claude/plugins/
+  // 2. Plugin skills — Claude Code only for now
   const pluginSkillDirs = await discoverPluginSkillDirs()
   for (const pluginDir of pluginSkillDirs) {
     const pluginName = path.relative(path.join(homedir, '.claude', 'plugins'), pluginDir)
     allSkills.push(
-      ...(await scanAndReport(`plugin:${pluginName}`, pluginDir, 'plugin')),
+      ...(await scanAndReport(`plugin:${pluginName}`, pluginDir, 'plugin', 'claude-code')),
     )
   }
 
-  // 3. Project skills
+  // 3. Project skills — for each project, scan every agent's project paths
   const discoveredProjects = await discoverProjects()
   const projects: Project[] = []
 
   for (const proj of discoveredProjects) {
-    const skillsDir = path.join(proj.path, '.claude', 'skills')
-    const projectSkills = await scanAndReport(
-      `project:${proj.name}`,
-      skillsDir,
-      'project',
-      proj.name,
-      proj.path,
-    )
-    allSkills.push(...projectSkills)
+    let projectTotal = 0
+    for (const agent of AGENTS) {
+      for (const rel of agent.projectPaths) {
+        const skillsDir = path.join(proj.path, rel)
+        const projectSkills = await scanAndReport(
+          `project:${proj.name}:${agent.id}`,
+          skillsDir,
+          'project',
+          agent.id,
+          proj.name,
+          proj.path,
+        )
+        allSkills.push(...projectSkills)
+        projectTotal += projectSkills.length
+      }
+    }
     projects.push({
       name: proj.name,
       path: proj.path,
-      skillCount: projectSkills.length,
+      skillCount: projectTotal,
     })
   }
 
-  // 4. Extra paths from SKILL_HUB_EXTRA_PATHS
+  // 4. Extra paths from SKILL_HUB_EXTRA_PATHS — agent unknown
   for (const extra of parseExtraPaths()) {
     allSkills.push(
-      ...(await scanAndReport(`extra:${path.basename(extra)}`, extra, 'project')),
+      ...(await scanAndReport(`extra:${path.basename(extra)}`, extra, 'project', 'unknown')),
     )
   }
 
@@ -387,8 +446,10 @@ export async function fullScan(): Promise<ScanResult> {
   const conflicts = detectConflicts(dedupedSkills)
 
   const bySource: Record<string, number> = {}
+  const byAgent: Record<string, number> = {}
   for (const s of dedupedSkills) {
     bySource[s.source] = (bySource[s.source] || 0) + 1
+    byAgent[s.agent] = (byAgent[s.agent] || 0) + 1
   }
 
   return {
@@ -400,6 +461,7 @@ export async function fullScan(): Promise<ScanResult> {
       global: dedupedSkills.filter((s) => s.scope === 'global').length,
       project: dedupedSkills.filter((s) => s.scope === 'project').length,
       bySource,
+      byAgent,
     },
     scannedPaths,
     durationMs: Date.now() - start,

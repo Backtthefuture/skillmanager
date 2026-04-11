@@ -1,3 +1,5 @@
+import { getAgentMeta } from '../agents'
+
 const sourceColors: Record<string, { bg: string; text: string }> = {
   newmax: { bg: 'bg-purple-500/20', text: 'text-purple-400' },
   agents: { bg: 'bg-cyan-500/20', text: 'text-cyan-400' },
@@ -17,6 +19,19 @@ export function SourceBadge({ source }: { source: string }) {
   return (
     <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${colors.bg} ${colors.text}`}>
       {source}
+    </span>
+  )
+}
+
+export function AgentBadge({ agent }: { agent: string }) {
+  const meta = getAgentMeta(agent)
+  return (
+    <span
+      title={meta.name}
+      className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] font-medium ring-1 ${meta.color.bg} ${meta.color.text} ${meta.color.ring}`}
+    >
+      <span>{meta.icon}</span>
+      <span className="truncate max-w-[80px]">{meta.name}</span>
     </span>
   )
 }

@@ -1,5 +1,6 @@
 import os from 'os';
 import { fullScan } from '../scanner/discovery.js';
+import { AGENTS } from '../scanner/agents.js';
 let cachedResult = null;
 export function getCachedResult() {
     return cachedResult;
@@ -16,12 +17,15 @@ export async function skillRoutes(app) {
             cachedResult = await fullScan();
         }
         let skills = [...cachedResult.skills];
-        const { scope, source, search } = req.query;
+        const { scope, source, agent, search } = req.query;
         if (scope && scope !== 'all') {
             skills = skills.filter((s) => s.scope === scope);
         }
         if (source && source !== 'all') {
             skills = skills.filter((s) => s.source === source);
+        }
+        if (agent && agent !== 'all') {
+            skills = skills.filter((s) => s.agent === agent);
         }
         if (search) {
             const q = search.toLowerCase();
@@ -40,6 +44,10 @@ export async function skillRoutes(app) {
             return reply.status(404).send({ error: 'Skill not found' });
         }
         return skill;
+    });
+    // Get the agent registry (id/name/icon) — used by the frontend filter UI
+    app.get('/api/agents', async () => {
+        return AGENTS.map((a) => ({ id: a.id, name: a.name, icon: a.icon }));
     });
     // Get discovered projects
     app.get('/api/projects', async () => {
@@ -68,7 +76,7 @@ export async function skillRoutes(app) {
             cachedResult = await fullScan();
         }
         return {
-            version: '1.0.0',
+            version: '0.3.0',
             node: process.version,
             platform: process.platform,
             cwd: process.cwd(),

@@ -13,11 +13,14 @@ export interface SkillFrontmatter {
   'argument-hint'?: string
 }
 
+import type { AgentId } from './scanner/agents.js'
+
 export interface Skill {
   id: string
   name: string
   description: string
   scope: 'global' | 'project' | 'plugin'
+  agent: AgentId
   source: 'local' | 'newmax' | 'agents' | 'symlink' | 'unknown'
   path: string
   realPath: string
@@ -60,6 +63,7 @@ export interface ScanResult {
     global: number
     project: number
     bySource: Record<string, number>
+    byAgent: Record<string, number>
   }
   scannedPaths: ScanPathReport[]
   durationMs: number

@@ -2,15 +2,15 @@ import chokidar from 'chokidar';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
+import { allAgentGlobalAbsPaths } from './agents.js';
 const homedir = os.homedir();
 let watcher = null;
 export function startWatcher(callback) {
     if (watcher)
         return;
     const watchPaths = [
-        path.join(homedir, '.claude', 'skills'),
+        ...allAgentGlobalAbsPaths(homedir).map((x) => x.path),
         path.join(homedir, '.newmax', 'skills'),
-        path.join(homedir, '.agents', 'skills'),
     ];
     // Only watch paths that exist
     const validPaths = watchPaths.filter((p) => {

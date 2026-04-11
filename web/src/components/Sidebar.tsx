@@ -1,13 +1,16 @@
 import type { Stats, Project } from '../hooks/useSkills'
+import { AGENT_ORDER, getAgentMeta } from '../agents'
 
 interface SidebarProps {
   stats: Stats
   projects: Project[]
   scopeFilter: string
   sourceFilter: string
+  agentFilter: string
   projectFilter: string
   onScopeChange: (v: string) => void
   onSourceChange: (v: string) => void
+  onAgentChange: (v: string) => void
   onProjectChange: (v: string) => void
 }
 
@@ -16,9 +19,11 @@ export function Sidebar({
   projects,
   scopeFilter,
   sourceFilter,
+  agentFilter,
   projectFilter,
   onScopeChange,
   onSourceChange,
+  onAgentChange,
   onProjectChange,
 }: SidebarProps) {
   const scopeItems = [
@@ -38,6 +43,18 @@ export function Sidebar({
       })),
   ]
 
+  // Agent items: show every agent that has skills, in registry order
+  const agentEntries = AGENT_ORDER
+    .map((id) => ({ id, count: stats.byAgent?.[id] || 0 }))
+    .filter((e) => e.count > 0)
+  const agentItems = [
+    { value: 'all', label: '全部 Agent', icon: '📋', count: stats.total },
+    ...agentEntries.map((e) => {
+      const meta = getAgentMeta(e.id)
+      return { value: meta.id, label: meta.name, icon: meta.icon, count: e.count }
+    }),
+  ]
+
   return (
     <aside className="lg:w-60 shrink-0 space-y-5">
       {/* Scope */}
@@ -50,6 +67,20 @@ export function Sidebar({
             label={item.label}
             count={item.count}
             icon={scopeIcon(item.value)}
+          />
+        ))}
+      </FilterSection>
+
+      {/* Agent type */}
+      <FilterSection title="Agent 类型">
+        {agentItems.map((item) => (
+          <FilterButton
+            key={item.value}
+            active={agentFilter === item.value}
+            onClick={() => onAgentChange(item.value)}
+            label={item.label}
+            count={item.count}
+            icon={item.icon}
           />
         ))}
       </FilterSection>

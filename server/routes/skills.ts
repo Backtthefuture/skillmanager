@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify'
 import os from 'os'
 import { fullScan } from '../scanner/discovery.js'
+import { AGENTS } from '../scanner/agents.js'
 import type { ScanResult } from '../types.js'
 
 let cachedResult: ScanResult | null = null
@@ -18,20 +19,23 @@ export async function skillRoutes(app: FastifyInstance) {
 
   // Get all skills (with optional filters)
   app.get<{
-    Querystring: { scope?: string; source?: string; search?: string }
+    Querystring: { scope?: string; source?: string; agent?: string; search?: string }
   }>('/api/skills', async (req) => {
     if (!cachedResult) {
       cachedResult = await fullScan()
     }
 
     let skills = [...cachedResult.skills]
-    const { scope, source, search } = req.query
+    const { scope, source, agent, search } = req.query
 
     if (scope && scope !== 'all') {
       skills = skills.filter((s) => s.scope === scope)
     }
     if (source && source !== 'all') {
       skills = skills.filter((s) => s.source === source)
+    }
+    if (agent && agent !== 'all') {
+      skills = skills.filter((s) => s.agent === agent)
     }
     if (search) {
       const q = search.toLowerCase()
@@ -55,6 +59,11 @@ export async function skillRoutes(app: FastifyInstance) {
       return reply.status(404).send({ error: 'Skill not found' })
     }
     return skill
+  })
+
+  // Get the agent registry (id/name/icon) — used by the frontend filter UI
+  app.get('/api/agents', async () => {
+    return AGENTS.map((a) => ({ id: a.id, name: a.name, icon: a.icon }))
   })
 
   // Get discovered projects
@@ -87,7 +96,7 @@ export async function skillRoutes(app: FastifyInstance) {
       cachedResult = await fullScan()
     }
     return {
-      version: '1.0.0',
+      version: '0.3.0',
       node: process.version,
       platform: process.platform,
       cwd: process.cwd(),
