@@ -34,7 +34,16 @@ export function SkillDetail({
 
   const showMsg = (type: 'success' | 'error', text: string) => {
     setMessage({ type, text })
-    setTimeout(() => setMessage(null), 3000)
+    // Success auto-dismisses; errors stick until the user closes them.
+    if (type === 'success') setTimeout(() => setMessage(null), 3000)
+  }
+
+  // Surface the real server error so users aren't stuck guessing why an
+  // operation failed. The server includes Node fs error codes (EBUSY / EPERM
+  // / EACCES / EXDEV ...) plus any human-readable hint it attached.
+  const errMsg = (e: unknown, fallback: string): string => {
+    const raw = e instanceof Error ? e.message : String(e ?? '')
+    return raw && raw.trim().length > 0 ? raw : fallback
   }
 
   const handleToggle = async () => {
@@ -42,7 +51,7 @@ export function SkillDetail({
     try {
       await onToggle(skill, !skill.enabled)
       showMsg('success', skill.enabled ? '已禁用' : '已启用')
-    } catch { showMsg('error', '操作失败') }
+    } catch (e) { showMsg('error', errMsg(e, '操作失败')) }
     finally { setActionLoading(null) }
   }
 
@@ -52,7 +61,7 @@ export function SkillDetail({
       await onCopy(skill, scope, projectPath)
       showMsg('success', '复制成功')
       setShowActions(false)
-    } catch { showMsg('error', '复制失败') }
+    } catch (e) { showMsg('error', errMsg(e, '复制失败')) }
     finally { setActionLoading(null) }
   }
 
@@ -62,7 +71,7 @@ export function SkillDetail({
       await onMove(skill, scope, projectPath)
       showMsg('success', '移动成功')
       setShowActions(false)
-    } catch { showMsg('error', '移动失败') }
+    } catch (e) { showMsg('error', errMsg(e, '移动失败')) }
     finally { setActionLoading(null) }
   }
 
@@ -71,7 +80,7 @@ export function SkillDetail({
     try {
       await onDelete(skill)
       onClose()
-    } catch { showMsg('error', '删除失败') }
+    } catch (e) { showMsg('error', errMsg(e, '删除失败')) }
     finally { setActionLoading(null) }
   }
 
@@ -142,10 +151,28 @@ export function SkillDetail({
 
           {/* Message */}
           {message && (
-            <div className={`mt-3 px-3 py-1.5 rounded-lg text-xs ${
-              message.type === 'success' ? 'bg-green-500/10 text-green-400' : 'bg-red-500/10 text-red-400'
-            }`}>
-              {message.text}
+            <div
+              className={`mt-3 px-3 py-2 rounded-lg text-xs flex items-start gap-2 ${
+                message.type === 'success'
+                  ? 'bg-green-500/10 text-green-400 border border-green-500/20'
+                  : 'bg-red-500/10 text-red-300 border border-red-500/30'
+              }`}
+            >
+              <span className="flex-1 whitespace-pre-wrap break-words font-mono leading-relaxed">
+                {message.text}
+              </span>
+              {message.type === 'error' && (
+                <button
+                  onClick={() => setMessage(null)}
+                  className="text-red-400/60 hover:text-red-300 shrink-0"
+                  aria-label="关闭"
+                >
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                    <line x1="18" y1="6" x2="6" y2="18" />
+                    <line x1="6" y1="6" x2="18" y2="18" />
+                  </svg>
+                </button>
+              )}
             </div>
           )}
         </div>

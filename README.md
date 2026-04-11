@@ -16,7 +16,7 @@ Skill Hub 是一个本地 Web UI：扫描全盘、聚合展示、可视化编辑
 ## 快速开始（一行命令）
 
 ```bash
-npm install -g https://github.com/Backtthefuture/skillmanager/raw/main/release/claude-skill-hub.tgz && skill-hub
+npm install -g https://github.com/Backtthefuture/huangshu/raw/main/tools/skill-hub/release/claude-skill-hub.tgz && skill-hub
 ```
 
 首次运行会自动：
@@ -56,11 +56,6 @@ http://localhost:3456/api/debug
 ## 本地开发
 
 ```bash
-# 方式一：从独立仓库克隆
-git clone https://github.com/Backtthefuture/skillmanager.git
-cd skillmanager
-
-# 方式二：从 huangshu 合集克隆
 git clone https://github.com/Backtthefuture/huangshu.git
 cd huangshu/tools/skill-hub
 

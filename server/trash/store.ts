@@ -12,7 +12,11 @@ import path from 'path'
 import os from 'os'
 import crypto from 'crypto'
 
-const TRASH_ROOT = path.join(os.homedir(), '.skill-hub', 'trash')
+function trashRoot(): string {
+  // Read HOME lazily so tests can override process.env.HOME between calls.
+  const home = process.env.HOME || process.env.USERPROFILE || os.homedir()
+  return path.join(home, '.skill-hub', 'trash')
+}
 export const TRASH_TTL_MS = 7 * 24 * 60 * 60 * 1000
 
 export interface TrashMeta {
@@ -39,11 +43,11 @@ function newId(): string {
 }
 
 async function ensureRoot(): Promise<void> {
-  await fs.mkdir(TRASH_ROOT, { recursive: true })
+  await fs.mkdir(trashRoot(), { recursive: true })
 }
 
 function entryDir(id: string): string {
-  return path.join(TRASH_ROOT, id)
+  return path.join(trashRoot(), id)
 }
 
 function metaPath(id: string): string {
@@ -52,6 +56,79 @@ function metaPath(id: string): string {
 
 function payloadPath(id: string): string {
   return path.join(entryDir(id), 'payload')
+}
+
+/**
+ * Move a directory into the trash (or restore one back) with Windows-aware
+ * fallbacks. Node's `fs.rename` surfaces EPERM/EBUSY/EACCES on Windows any
+ * time the source directory contains a file held open by another process —
+ * Claude Code watching ~/.claude/skills/, OneDrive syncing, antivirus
+ * scanning, VS Code previewing. These locks are typically transient
+ * (< 1 second), so we retry with backoff, then fall back to a recursive
+ * copy + remove which only needs read access on the source and doesn't
+ * need exclusive handles.
+ *
+ * Error messages on final failure include a hint list so Windows users
+ * don't see a bare `EPERM` with no direction.
+ */
+const RETRYABLE_RENAME_CODES = new Set(['EPERM', 'EBUSY', 'EACCES', 'ENOTEMPTY'])
+
+async function sleep(ms: number): Promise<void> {
+  return new Promise((r) => setTimeout(r, ms))
+}
+
+function windowsHint(): string {
+  if (process.platform !== 'win32') return ''
+  return (
+    '\n\n提示:Windows 上通常是文件被其他进程占用。常见原因:\n' +
+    '  1. Claude Code / Codex / Cursor 客户端仍在运行 — 请在任务管理器里彻底退出\n' +
+    '  2. VS Code 打开了这个 skill 的文件\n' +
+    '  3. OneDrive / 坚果云 正在同步 — 请暂停同步后重试\n' +
+    '  4. 360 / 火绒 / Windows Defender 正在扫描目录\n' +
+    '  5. Windows Search 索引服务持有文件句柄\n' +
+    '关闭相关软件后再试一次;如果仍然失败,可以在资源管理器里手动删除。'
+  )
+}
+
+async function renameWithFallback(src: string, dest: string): Promise<void> {
+  // Fast path: plain rename with retries for transient Windows locks.
+  const delays = [0, 80, 200, 450] // ms; total ~730ms worst case
+  let lastErr: any = null
+
+  for (let i = 0; i < delays.length; i++) {
+    if (delays[i] > 0) await sleep(delays[i])
+    try {
+      await fs.rename(src, dest)
+      return
+    } catch (err: any) {
+      lastErr = err
+      if (err?.code === 'EXDEV') break // cross-device — skip retries, go straight to fallback
+      if (!RETRYABLE_RENAME_CODES.has(err?.code)) throw err
+    }
+  }
+
+  // Fallback: recursive copy + remove. Works across devices and doesn't
+  // need exclusive access to the source directory.
+  try {
+    await copyDir(src, dest)
+  } catch (err: any) {
+    const base = lastErr?.message || err?.message || 'copy failed'
+    throw new Error(`${base}${windowsHint()}`)
+  }
+
+  try {
+    // maxRetries lets fs.rm itself handle short-lived Windows locks during cleanup
+    await fs.rm(src, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 })
+  } catch (err: any) {
+    // Source copy succeeded but cleanup failed — surface a specific message so
+    // the user knows the file was copied (data is safe) but the original
+    // still exists and needs manual cleanup.
+    throw new Error(
+      `文件已复制到回收站,但原路径清理失败: ${err?.message || err}\n` +
+        `源路径:${src}\n` +
+        `请在资源管理器里手动删除上面这个目录。${windowsHint()}`,
+    )
+  }
 }
 
 async function readMeta(id: string): Promise<TrashMeta | null> {
@@ -136,18 +213,9 @@ export async function moveToTrash(skillPath: string, skillName?: string): Promis
     return meta
   }
 
-  // 普通目录：rename 到 payload/。同盘 rename 是原子操作，跨盘会失败 → 回退到 cp+rm
+  // 普通目录：rename 到 payload/。Windows 上需要重试 + cp 兜底(见 renameWithFallback)
   const dest = payloadPath(id)
-  try {
-    await fs.rename(skillPath, dest)
-  } catch (err: any) {
-    if (err?.code === 'EXDEV') {
-      await copyDir(skillPath, dest)
-      await fs.rm(skillPath, { recursive: true })
-    } else {
-      throw err
-    }
-  }
+  await renameWithFallback(skillPath, dest)
 
   const size = await dirSize(dest).catch(() => 0)
   const meta: TrashMeta = {
@@ -175,7 +243,7 @@ export async function listTrash(): Promise<TrashEntry[]> {
   const entries: TrashEntry[] = []
   let dirs: string[] = []
   try {
-    dirs = await fs.readdir(TRASH_ROOT)
+    dirs = await fs.readdir(trashRoot())
   } catch {
     return entries
   }
@@ -236,16 +304,7 @@ export async function restoreFromTrash(id: string, force = false): Promise<Trash
     await fs.symlink(meta.symlinkTarget, meta.originalPath)
   } else {
     const src = payloadPath(id)
-    try {
-      await fs.rename(src, meta.originalPath)
-    } catch (err: any) {
-      if (err?.code === 'EXDEV') {
-        await copyDir(src, meta.originalPath)
-        await fs.rm(src, { recursive: true })
-      } else {
-        throw err
-      }
-    }
+    await renameWithFallback(src, meta.originalPath)
   }
 
   // 清理 trash 条目目录
@@ -273,7 +332,7 @@ export async function purgeExpired(): Promise<number> {
   await ensureRoot()
   let dirs: string[] = []
   try {
-    dirs = await fs.readdir(TRASH_ROOT)
+    dirs = await fs.readdir(trashRoot())
   } catch {
     return 0
   }
