@@ -11,6 +11,8 @@ import { SimilarView } from './components/SimilarView'
 import { TrashView } from './components/TrashView'
 import { SyncView } from './components/SyncView'
 import { ConflictsView } from './components/ConflictsView'
+import { AboutModal } from './components/AboutModal'
+import { Footer } from './components/Footer'
 import type { Skill } from './hooks/useSkills'
 
 type GroupBy = 'none' | 'scope' | 'source' | 'project'
@@ -37,6 +39,7 @@ function App() {
   const [bulkDeleting, setBulkDeleting] = useState<boolean>(false)
   const [bulkDeleteResult, setBulkDeleteResult] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null)
   const [conflictRowBusy, setConflictRowBusy] = useState<Set<string>>(new Set())
+  const [aboutOpen, setAboutOpen] = useState<boolean>(false)
   const [sidebarOpen, setSidebarOpen] = useState<boolean>(() => {
     try {
       return localStorage.getItem('skill-hub:sidebar') !== 'closed'
@@ -241,18 +244,23 @@ function App() {
       <header className="border-b border-slate-800/80 bg-slate-950/90 backdrop-blur-md sticky top-0 z-40">
         <div className="max-w-[1400px] mx-auto px-6 py-3.5 flex items-center justify-between">
           <div className="flex items-center gap-4">
-            <div className="flex items-center gap-3">
-              <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white font-bold text-sm shadow-lg shadow-indigo-500/20">
-                S
+            <button
+              onClick={() => setAboutOpen(true)}
+              title="关于黄叔"
+              className="flex items-center gap-3 group"
+            >
+              <div className="w-9 h-9 rounded-xl bg-yellow-400 flex items-center justify-center text-slate-900 font-bold text-base shadow-lg shadow-yellow-400/20 group-hover:scale-105 group-hover:bg-yellow-300 transition-all">
+                黄
               </div>
-              <div>
-                <h1 className="text-base font-bold text-slate-100 leading-tight">Claude Skill Hub</h1>
-                <p className="text-[11px] text-slate-500">
+              <div className="text-left">
+                <h1 className="text-base font-bold text-slate-100 leading-tight group-hover:text-yellow-300 transition-colors">
                   Skill 管理器
-                  {lastUpdate && <span className="ml-2 text-green-500/60">最近更新 {lastUpdate}</span>}
-                </p>
+                </h1>
+                {lastUpdate && (
+                  <p className="text-[11px] text-green-500/60">最近更新 {lastUpdate}</p>
+                )}
               </div>
-            </div>
+            </button>
 
             {/* View switcher */}
             <div className="flex items-center gap-0.5 bg-slate-900 rounded-lg border border-slate-800 p-0.5 ml-4">
@@ -606,7 +614,17 @@ function App() {
             </div>
           </>
         )}
+
+        <Footer onAboutClick={() => setAboutOpen(true)} />
       </div>
+
+      {/* About modal */}
+      <AboutModal
+        open={aboutOpen}
+        onClose={() => setAboutOpen(false)}
+        stats={stats}
+        conflictCount={conflicts.length}
+      />
 
       {/* Bulk delete confirm */}
       {bulkDeleteConfirm && (
