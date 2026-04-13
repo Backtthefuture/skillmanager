@@ -9,6 +9,17 @@ import {
 } from '../trash/store.js'
 import { invalidateCache } from './skills.js'
 
+// newId() from ../trash/store.ts always matches `<base36>-<hex>`. Reject
+// anything else so an attacker can't smuggle path traversal into fs.rm.
+const TRASH_ID_RE = /^[a-z0-9]{1,20}-[a-f0-9]{4,32}$/
+
+function assertSafeTrashId(id: unknown): string {
+  if (typeof id !== 'string' || !TRASH_ID_RE.test(id)) {
+    throw new Error(`非法 trash id: ${String(id)}`)
+  }
+  return id
+}
+
 export async function trashRoutes(app: FastifyInstance) {
   // List trash entries (also purges expired as a side effect)
   app.get('/api/trash', async () => {
@@ -21,7 +32,13 @@ export async function trashRoutes(app: FastifyInstance) {
     Params: { id: string }
     Querystring: { force?: string }
   }>('/api/trash/:id/restore', async (req, reply) => {
-    const { id } = req.params
+    let id: string
+    try {
+      id = assertSafeTrashId(req.params.id)
+    } catch (err: any) {
+      reply.status(400)
+      return { ok: false, error: err.message }
+    }
     const force = req.query.force === 'true' || req.query.force === '1'
     try {
       const meta = await restoreFromTrash(id, force)
@@ -42,8 +59,15 @@ export async function trashRoutes(app: FastifyInstance) {
   })
 
   // Permanently delete a single trash entry
-  app.delete<{ Params: { id: string } }>('/api/trash/:id', async (req) => {
-    const ok = await purgeOne(req.params.id)
+  app.delete<{ Params: { id: string } }>('/api/trash/:id', async (req, reply) => {
+    let id: string
+    try {
+      id = assertSafeTrashId(req.params.id)
+    } catch (err: any) {
+      reply.status(400)
+      return { ok: false, error: err.message }
+    }
+    const ok = await purgeOne(id)
     return { ok }
   })
 

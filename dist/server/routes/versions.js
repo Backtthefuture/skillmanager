@@ -1,11 +1,20 @@
 import { createSnapshot, getHistory, getVersion, diffVersions, diffWithCurrent, rollback, deleteVersion, } from '../versioning/store.js';
 import { invalidateCache } from './skills.js';
+import { confinePath, confineExistingPath } from '../security.js';
 export async function versionRoutes(app) {
     // 创建快照
-    app.post('/api/versions/snapshot', async (req) => {
+    app.post('/api/versions/snapshot', async (req, reply) => {
         const { skillPath, skillName, message } = req.body;
+        let safePath;
         try {
-            const meta = await createSnapshot(skillPath, skillName, message, 'manual');
+            safePath = await confineExistingPath(skillPath);
+        }
+        catch (err) {
+            reply.status(403);
+            return { ok: false, error: err?.message || '路径不合法' };
+        }
+        try {
+            const meta = await createSnapshot(safePath, skillName, message, 'manual');
             return { ok: true, version: meta };
         }
         catch (e) {
@@ -43,18 +52,36 @@ export async function versionRoutes(app) {
         return { ok: true, diff };
     });
     // 回滚到指定版本
-    app.post('/api/versions/rollback', async (req) => {
+    app.post('/api/versions/rollback', async (req, reply) => {
         const { skillPath, versionId } = req.body;
-        const success = await rollback(skillPath, versionId);
+        let safePath;
+        try {
+            safePath = await confineExistingPath(skillPath);
+        }
+        catch (err) {
+            reply.status(403);
+            return { ok: false, error: err?.message || '路径不合法' };
+        }
+        const success = await rollback(safePath, versionId);
         if (!success)
             return { ok: false, error: 'Rollback failed' };
         invalidateCache();
         return { ok: true };
     });
     // 删除版本
-    app.delete('/api/versions', async (req) => {
+    app.delete('/api/versions', async (req, reply) => {
         const { skillPath, versionId } = req.query;
-        const success = await deleteVersion(skillPath, versionId);
+        let safePath;
+        try {
+            // version metadata is keyed by skill path — we still confine, but the
+            // path may have been deleted (allow non-existent), so use confinePath.
+            safePath = await confinePath(skillPath);
+        }
+        catch (err) {
+            reply.status(403);
+            return { ok: false, error: err?.message || '路径不合法' };
+        }
+        const success = await deleteVersion(safePath, versionId);
         return { ok: success };
     });
 }
