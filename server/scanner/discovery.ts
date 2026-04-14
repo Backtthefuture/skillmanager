@@ -334,6 +334,10 @@ function detectConflicts(skills: Skill[]): ConflictGroup[] {
   const conflicts: ConflictGroup[] = []
   for (const [name, group] of byName) {
     if (group.length > 1) {
+      // Same-name entries that resolve to the same physical path are symlinks
+      // pointing at one shared skill — not a real conflict.
+      const realPaths = new Set(group.map((s) => s.realPath))
+      if (realPaths.size <= 1) continue
       group.forEach((s) => (s.hasConflict = true))
       conflicts.push({ name, skills: group })
     }
