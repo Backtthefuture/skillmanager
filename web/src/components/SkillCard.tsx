@@ -1,4 +1,5 @@
 import { SourceBadge, ScopeBadge, AgentBadge } from './SourceBadge'
+import { CategoryBadge } from './CategoryBadge'
 import type { Skill } from '../hooks/useSkills'
 
 interface SkillCardProps {
@@ -84,7 +85,12 @@ export function SkillCard({ skill, onClick, selectMode, selected, onSelectToggle
 
       {/* Footer */}
       <div className="flex items-center justify-between">
-        <SourceBadge source={skill.source} />
+        <div className="flex items-center gap-1.5">
+          <SourceBadge source={skill.source} />
+          {skill.category && skill.category !== 'other' && (
+            <CategoryBadge category={skill.category} />
+          )}
+        </div>
         <div className="flex items-center gap-2 text-xs text-slate-500">
           {skill.symlinkTarget && (
             <span title={`→ ${skill.symlinkTarget}`}>🔗</span>

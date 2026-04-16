@@ -1,9 +1,10 @@
 import { SkillCard } from './SkillCard'
+import { getCategoryMeta } from './CategoryBadge'
 import type { Skill } from '../hooks/useSkills'
 
 interface SkillGridProps {
   skills: Skill[]
-  groupBy: 'none' | 'scope' | 'source' | 'project'
+  groupBy: 'none' | 'scope' | 'source' | 'project' | 'category'
   onSkillClick: (skill: Skill) => void
   selectMode?: boolean
   selectedIds?: Set<string>
@@ -60,6 +61,8 @@ export function SkillGrid({ skills, groupBy, onSkillClick, selectMode, selectedI
     let key: string
     if (groupBy === 'project') {
       key = skill.scope === 'project' ? (skill.projectName || '未知项目') : '全局'
+    } else if (groupBy === 'category') {
+      key = skill.category || 'other'
     } else {
       key = skill[groupBy]
     }
@@ -77,13 +80,22 @@ export function SkillGrid({ skills, groupBy, onSkillClick, selectMode, selectedI
     return b[1].length - a[1].length
   })
 
+  // Build label for each group key
+  const labelFor = (key: string): string => {
+    if (groupBy === 'category') {
+      const meta = getCategoryMeta(key)
+      return `${meta.icon} ${meta.name}`
+    }
+    return (groupLabels[groupBy] && groupLabels[groupBy][key]) || key
+  }
+
   return (
     <div className="space-y-6">
       {sortedGroups.map(([key, groupSkills]) => (
         <div key={key}>
           <div className="flex items-center gap-3 mb-3">
             <h2 className="text-sm font-semibold text-slate-300">
-              {(groupLabels[groupBy] && groupLabels[groupBy][key]) || key}
+              {labelFor(key)}
             </h2>
             <span className="text-xs text-slate-600 bg-slate-800 px-2 py-0.5 rounded-full">
               {groupSkills.length}

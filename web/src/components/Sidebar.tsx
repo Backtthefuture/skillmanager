@@ -1,5 +1,6 @@
 import type { Stats, Project } from '../hooks/useSkills'
 import { AGENT_ORDER, getAgentMeta } from '../agents'
+import { getCategoryMeta } from './CategoryBadge'
 
 interface SidebarProps {
   stats: Stats
@@ -7,10 +8,12 @@ interface SidebarProps {
   scopeFilter: string
   sourceFilter: string
   agentFilter: string
+  categoryFilter: string
   projectFilter: string
   onScopeChange: (v: string) => void
   onSourceChange: (v: string) => void
   onAgentChange: (v: string) => void
+  onCategoryChange: (v: string) => void
   onProjectChange: (v: string) => void
 }
 
@@ -20,10 +23,12 @@ export function Sidebar({
   scopeFilter,
   sourceFilter,
   agentFilter,
+  categoryFilter,
   projectFilter,
   onScopeChange,
   onSourceChange,
   onAgentChange,
+  onCategoryChange,
   onProjectChange,
 }: SidebarProps) {
   const scopeItems = [
@@ -84,6 +89,34 @@ export function Sidebar({
           />
         ))}
       </FilterSection>
+
+      {/* Category */}
+      {Object.keys(stats.byCategory || {}).length > 0 && (
+        <FilterSection title="分类">
+          <FilterButton
+            active={categoryFilter === 'all'}
+            onClick={() => onCategoryChange('all')}
+            label="全部分类"
+            icon="📋"
+            count={stats.total}
+          />
+          {Object.entries(stats.byCategory || {})
+            .sort((a, b) => b[1] - a[1])
+            .map(([catId, count]) => {
+              const meta = getCategoryMeta(catId)
+              return (
+                <FilterButton
+                  key={catId}
+                  active={categoryFilter === catId}
+                  onClick={() => onCategoryChange(catId)}
+                  label={meta.name}
+                  icon={meta.icon}
+                  count={count}
+                />
+              )
+            })}
+        </FilterSection>
+      )}
 
       {/* Source */}
       <FilterSection title="来源">

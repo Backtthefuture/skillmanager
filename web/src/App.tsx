@@ -15,17 +15,18 @@ import { AboutModal } from './components/AboutModal'
 import { Footer } from './components/Footer'
 import type { Skill } from './hooks/useSkills'
 
-type GroupBy = 'none' | 'scope' | 'source' | 'project'
+type GroupBy = 'none' | 'scope' | 'source' | 'project' | 'category'
 type View = 'skills' | 'similar' | 'dashboard' | 'trash' | 'sync' | 'conflicts'
 
 function App() {
-  const { allSkills, skills, stats, projects, conflicts, loading, error, scan, filterSkills } = useSkills()
+  const { allSkills, skills, stats, projects, conflicts, categories, health, mergeSuggestions, loading, error, scan, filterSkills } = useSkills()
   const { theme, toggle: toggleTheme } = useTheme()
 
   const [view, setView] = useState<View>('skills')
   const [scopeFilter, setScopeFilter] = useState('all')
   const [sourceFilter, setSourceFilter] = useState('all')
   const [agentFilter, setAgentFilter] = useState('all')
+  const [categoryFilter, setCategoryFilter] = useState('all')
   const [projectFilter, setProjectFilter] = useState('all')
   const [conflictOnly, setConflictOnly] = useState(false)
   const [search, setSearch] = useState('')
@@ -85,17 +86,18 @@ function App() {
   )
 
   const applyFilters = useCallback(
-    (overrides?: { scope?: string; source?: string; agent?: string; project?: string; search?: string; conflictOnly?: boolean }) => {
+    (overrides?: { scope?: string; source?: string; agent?: string; category?: string; project?: string; search?: string; conflictOnly?: boolean }) => {
       filterSkills({
         scope: overrides?.scope ?? scopeFilter,
         source: overrides?.source ?? sourceFilter,
         agent: overrides?.agent ?? agentFilter,
+        category: overrides?.category ?? categoryFilter,
         project: overrides?.project ?? projectFilter,
         search: overrides?.search ?? search,
         conflictOnly: overrides?.conflictOnly ?? conflictOnly,
       })
     },
-    [filterSkills, scopeFilter, sourceFilter, agentFilter, projectFilter, search, conflictOnly],
+    [filterSkills, scopeFilter, sourceFilter, agentFilter, categoryFilter, projectFilter, search, conflictOnly],
   )
 
   const handleScopeChange = (v: string) => {
@@ -112,6 +114,11 @@ function App() {
   const handleAgentChange = (v: string) => {
     setAgentFilter(v)
     applyFilters({ agent: v })
+  }
+
+  const handleCategoryChange = (v: string) => {
+    setCategoryFilter(v)
+    applyFilters({ category: v })
   }
 
   const handleProjectChange = (v: string) => {
@@ -373,7 +380,7 @@ function App() {
       <div className="max-w-[1400px] mx-auto px-6 py-6">
         {/* Stats */}
         {stats.total > 0 && (
-          <StatsBar stats={stats} projects={projects} conflicts={conflicts.length} />
+          <StatsBar stats={stats} projects={projects} conflicts={conflicts.length} health={health} />
         )}
 
         {error && (
@@ -407,7 +414,7 @@ function App() {
             busy={conflictRowBusy}
           />
         ) : view === 'dashboard' ? (
-          <Dashboard stats={stats} projects={projects} conflicts={conflicts} skills={allSkills} />
+          <Dashboard stats={stats} projects={projects} conflicts={conflicts} skills={allSkills} health={health} categories={categories} mergeSuggestions={mergeSuggestions} onSkillClick={setSelectedSkill} />
         ) : view === 'similar' ? (
           <SimilarView onSkillClick={setSelectedSkill} />
         ) : view === 'trash' ? (
@@ -440,10 +447,12 @@ function App() {
                   scopeFilter={scopeFilter}
                   sourceFilter={sourceFilter}
                   agentFilter={agentFilter}
+                  categoryFilter={categoryFilter}
                   projectFilter={projectFilter}
                   onScopeChange={handleScopeChange}
                   onSourceChange={handleSourceChange}
                   onAgentChange={handleAgentChange}
+                  onCategoryChange={handleCategoryChange}
                   onProjectChange={handleProjectChange}
                 />
               )}
@@ -507,6 +516,7 @@ function App() {
                     <div className="flex items-center gap-1 bg-slate-900 rounded-lg border border-slate-800 p-0.5">
                       {([
                         { value: 'scope', label: '按层级' },
+                        { value: 'category', label: '按分类' },
                         { value: 'source', label: '按来源' },
                         { value: 'none', label: '平铺' },
                       ] as { value: GroupBy; label: string }[]).map((opt) => (

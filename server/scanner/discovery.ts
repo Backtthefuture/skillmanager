@@ -11,6 +11,9 @@ import {
   isValidAgentId,
   type AgentId,
 } from './agents.js'
+import { classifyAll } from './taxonomy.js'
+import { detectSimilarSkills } from './similarity.js'
+import { computeHealth } from './health.js'
 import type { Skill, Project, ConflictGroup, ScanResult, ScanPathReport } from '../types.js'
 
 const homedir = os.homedir()
@@ -147,6 +150,7 @@ async function scanSkillDir(
       scope,
       agent: resolvedAgent,
       source,
+      category: '', // populated later by classifyAll()
       path: entryPath,
       realPath,
       symlinkTarget: symlinkInfo.isSymlink ? symlinkInfo.target : undefined,
@@ -452,23 +456,43 @@ export async function fullScan(): Promise<ScanResult> {
 
   const conflicts = detectConflicts(dedupedSkills)
 
+  // Classify skills into categories + generate merge suggestions
+  const { skills: classifiedSkills, categories, mergeSuggestions, byCategory } =
+    classifyAll(dedupedSkills)
+
+  // Similarity detection (used by health check)
+  const similarGroups = detectSimilarSkills(classifiedSkills)
+
+  // Health diagnostics
+  const health = computeHealth(
+    classifiedSkills,
+    conflicts,
+    similarGroups,
+    categories,
+    mergeSuggestions,
+  )
+
   const bySource: Record<string, number> = {}
   const byAgent: Record<string, number> = {}
-  for (const s of dedupedSkills) {
+  for (const s of classifiedSkills) {
     bySource[s.source] = (bySource[s.source] || 0) + 1
     byAgent[s.agent] = (byAgent[s.agent] || 0) + 1
   }
 
   return {
-    skills: dedupedSkills,
+    skills: classifiedSkills,
     projects,
     conflicts,
+    categories,
+    mergeSuggestions,
+    health,
     stats: {
-      total: dedupedSkills.length,
-      global: dedupedSkills.filter((s) => s.scope === 'global').length,
-      project: dedupedSkills.filter((s) => s.scope === 'project').length,
+      total: classifiedSkills.length,
+      global: classifiedSkills.filter((s) => s.scope === 'global').length,
+      project: classifiedSkills.filter((s) => s.scope === 'project').length,
       bySource,
       byAgent,
+      byCategory,
     },
     scannedPaths,
     durationMs: Date.now() - start,

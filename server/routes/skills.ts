@@ -19,14 +19,14 @@ export async function skillRoutes(app: FastifyInstance) {
 
   // Get all skills (with optional filters)
   app.get<{
-    Querystring: { scope?: string; source?: string; agent?: string; search?: string }
+    Querystring: { scope?: string; source?: string; agent?: string; category?: string; search?: string }
   }>('/api/skills', async (req) => {
     if (!cachedResult) {
       cachedResult = await fullScan()
     }
 
     let skills = [...cachedResult.skills]
-    const { scope, source, agent, search } = req.query
+    const { scope, source, agent, category, search } = req.query
 
     if (scope && scope !== 'all') {
       skills = skills.filter((s) => s.scope === scope)
@@ -36,6 +36,9 @@ export async function skillRoutes(app: FastifyInstance) {
     }
     if (agent && agent !== 'all') {
       skills = skills.filter((s) => s.agent === agent)
+    }
+    if (category && category !== 'all') {
+      skills = skills.filter((s) => s.category === category)
     }
     if (search) {
       const q = search.toLowerCase()
@@ -111,6 +114,8 @@ export async function skillRoutes(app: FastifyInstance) {
         scannedPaths: cachedResult.scannedPaths,
       },
       stats: cachedResult.stats,
+      health: cachedResult.health,
+      categories: cachedResult.categories,
     }
   })
 }

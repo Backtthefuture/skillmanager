@@ -14,6 +14,8 @@ export interface SkillFrontmatter {
 }
 
 import type { AgentId } from './scanner/agents.js'
+import type { CategorySummary, MergeSuggestion } from './scanner/taxonomy.js'
+import type { HealthReport } from './scanner/health.js'
 
 export interface Skill {
   id: string
@@ -22,6 +24,7 @@ export interface Skill {
   scope: 'global' | 'project' | 'plugin'
   agent: AgentId
   source: 'local' | 'newmax' | 'agents' | 'symlink' | 'unknown'
+  category: string
   path: string
   realPath: string
   symlinkTarget?: string
@@ -58,12 +61,16 @@ export interface ScanResult {
   skills: Skill[]
   projects: Project[]
   conflicts: ConflictGroup[]
+  categories: CategorySummary[]
+  mergeSuggestions: MergeSuggestion[]
+  health: HealthReport
   stats: {
     total: number
     global: number
     project: number
     bySource: Record<string, number>
     byAgent: Record<string, number>
+    byCategory: Record<string, number>
   }
   scannedPaths: ScanPathReport[]
   durationMs: number

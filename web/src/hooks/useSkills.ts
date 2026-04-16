@@ -1,5 +1,6 @@
 import { useState, useCallback } from 'react'
 import type { AgentId } from '../agents'
+import type { HealthReport, MergeSuggestion, CategorySummary } from '../components/HealthPanel'
 
 export interface Skill {
   id: string
@@ -8,6 +9,7 @@ export interface Skill {
   scope: 'global' | 'project' | 'plugin'
   agent: AgentId
   source: 'local' | 'newmax' | 'agents' | 'symlink' | 'unknown'
+  category: string
   path: string
   realPath: string
   symlinkTarget?: string
@@ -27,6 +29,7 @@ export interface Stats {
   project: number
   bySource: Record<string, number>
   byAgent: Record<string, number>
+  byCategory: Record<string, number>
 }
 
 export interface Project {
@@ -43,9 +46,12 @@ export interface ConflictGroup {
 export function useSkills() {
   const [allSkills, setAllSkills] = useState<Skill[]>([])
   const [skills, setSkills] = useState<Skill[]>([])
-  const [stats, setStats] = useState<Stats>({ total: 0, global: 0, project: 0, bySource: {}, byAgent: {} })
+  const [stats, setStats] = useState<Stats>({ total: 0, global: 0, project: 0, bySource: {}, byAgent: {}, byCategory: {} })
   const [projects, setProjects] = useState<Project[]>([])
   const [conflicts, setConflicts] = useState<ConflictGroup[]>([])
+  const [categories, setCategories] = useState<CategorySummary[]>([])
+  const [health, setHealth] = useState<HealthReport | null>(null)
+  const [mergeSuggestions, setMergeSuggestions] = useState<MergeSuggestion[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -61,6 +67,9 @@ export function useSkills() {
       setStats(data.stats)
       setProjects(data.projects)
       setConflicts(data.conflicts)
+      setCategories(data.categories || [])
+      setHealth(data.health || null)
+      setMergeSuggestions(data.mergeSuggestions || [])
     } catch (e: any) {
       setError(e.message)
     } finally {
@@ -69,7 +78,7 @@ export function useSkills() {
   }, [])
 
   const filterSkills = useCallback(
-    (opts: { scope?: string; source?: string; agent?: string; search?: string; project?: string; conflictOnly?: boolean }) => {
+    (opts: { scope?: string; source?: string; agent?: string; category?: string; search?: string; project?: string; conflictOnly?: boolean }) => {
       let filtered = [...allSkills]
 
       if (opts.scope && opts.scope !== 'all') {
@@ -80,6 +89,9 @@ export function useSkills() {
       }
       if (opts.agent && opts.agent !== 'all') {
         filtered = filtered.filter((s) => s.agent === opts.agent)
+      }
+      if (opts.category && opts.category !== 'all') {
+        filtered = filtered.filter((s) => s.category === opts.category)
       }
       if (opts.project && opts.project !== 'all') {
         filtered = filtered.filter((s) => s.projectPath === opts.project || (opts.project === 'global' && s.scope === 'global'))
@@ -108,6 +120,9 @@ export function useSkills() {
     stats,
     projects,
     conflicts,
+    categories,
+    health,
+    mergeSuggestions,
     loading,
     error,
     scan,

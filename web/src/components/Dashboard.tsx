@@ -1,19 +1,31 @@
 import type { Stats, Project, ConflictGroup, Skill } from '../hooks/useSkills'
+import { HealthPanel } from './HealthPanel'
+import type { HealthReport, MergeSuggestion, CategorySummary } from './HealthPanel'
 
 interface DashboardProps {
   stats: Stats
   projects: Project[]
   conflicts: ConflictGroup[]
   skills: Skill[]
+  health: HealthReport | null
+  categories: CategorySummary[]
+  mergeSuggestions: MergeSuggestion[]
+  onSkillClick?: (skill: Skill) => void
 }
 
-export function Dashboard({ stats, projects, conflicts, skills }: DashboardProps) {
-  // Compute category stats
-  const categories = categorizeSkills(skills)
-
+export function Dashboard({ stats, projects, conflicts, skills, health, categories, mergeSuggestions, onSkillClick }: DashboardProps) {
   return (
     <div className="space-y-6">
-      {/* Source Distribution */}
+      {/* Health Panel */}
+      <HealthPanel
+        health={health}
+        mergeSuggestions={mergeSuggestions}
+        categories={categories}
+        skills={skills}
+        onSkillClick={onSkillClick}
+      />
+
+      {/* Source + Scope Distribution */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <Card title="来源分布">
           <div className="space-y-2.5">
@@ -52,22 +64,6 @@ export function Dashboard({ stats, projects, conflicts, skills }: DashboardProps
           </div>
         </Card>
       </div>
-
-      {/* Categories */}
-      <Card title="技能分类">
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          {categories.map((cat) => (
-            <div
-              key={cat.name}
-              className="bg-slate-900/50 rounded-lg border border-slate-800/40 p-3"
-            >
-              <div className="text-lg mb-1">{cat.icon}</div>
-              <div className="text-lg font-bold text-slate-200">{cat.count}</div>
-              <div className="text-[11px] text-slate-500">{cat.name}</div>
-            </div>
-          ))}
-        </div>
-      </Card>
 
       {/* Projects */}
       {projects.length > 0 && (
@@ -182,46 +178,4 @@ function sourceLabel(s: string): string {
 function sourceColor(s: string): string {
   const m: Record<string, string> = { newmax: 'bg-purple-500', agents: 'bg-cyan-500', local: 'bg-green-500', unknown: 'bg-gray-500' }
   return m[s] || 'bg-gray-500'
-}
-
-interface Category {
-  name: string
-  icon: string
-  keywords: string[]
-  count: number
-}
-
-function categorizeSkills(skills: Skill[]): Category[] {
-  const defs: Omit<Category, 'count'>[] = [
-    { name: '飞书/Lark', icon: '💬', keywords: ['lark', 'feishu'] },
-    { name: '文档处理', icon: '📄', keywords: ['pdf', 'docx', 'xlsx', 'pptx', 'doc', 'sheet'] },
-    { name: '视频/音频', icon: '🎬', keywords: ['video', 'ffmpeg', 'audio', 'remotion'] },
-    { name: '设计/创意', icon: '🎨', keywords: ['design', 'canvas', 'art', 'brand', 'theme', 'image', 'sketch'] },
-    { name: '开发工具', icon: '🛠', keywords: ['tdd', 'mcp', 'skill-creator', 'webapp', 'frontend', 'claude-api'] },
-    { name: '邮件/通讯', icon: '📧', keywords: ['email', 'mail', 'slack', 'im', 'comms'] },
-    { name: '数据分析', icon: '📊', keywords: ['data', 'analysis', 'report', 'daily'] },
-    { name: '其他', icon: '📦', keywords: [] },
-  ]
-
-  const cats: Category[] = defs.map((d) => ({ ...d, count: 0 }))
-  const matched = new Set<string>()
-
-  for (const skill of skills) {
-    const nameAndDesc = `${skill.name} ${skill.description}`.toLowerCase()
-    let found = false
-    for (const cat of cats) {
-      if (cat.keywords.length === 0) continue
-      if (cat.keywords.some((kw) => nameAndDesc.includes(kw))) {
-        cat.count++
-        matched.add(skill.id)
-        found = true
-        break
-      }
-    }
-    if (!found) {
-      cats[cats.length - 1].count++
-    }
-  }
-
-  return cats.filter((c) => c.count > 0)
 }
