@@ -15,6 +15,7 @@ import { startWatcher } from './scanner/watcher.js'
 import { invalidateCache } from './routes/skills.js'
 import { fullScan } from './scanner/discovery.js'
 import { purgeExpired as purgeExpiredTrash } from './trash/store.js'
+import { registerOriginGuard } from './security.js'
 import type { WebSocket } from 'ws'
 
 const __filename = fileURLToPath(import.meta.url)
@@ -22,7 +23,26 @@ const __dirname = path.dirname(__filename)
 
 const app = Fastify({ logger: false })
 
-await app.register(cors, { origin: true })
+// Track the actually-bound origin so CORS + CSRF guards know what to accept.
+// The server may fall through to a higher port on EADDRINUSE, so both lists
+// are mutable and populated after `listen()` resolves.
+const allowedOrigins: string[] = []
+function allowedOriginsGetter(): string[] {
+  return allowedOrigins
+}
+
+await app.register(cors, {
+  origin: (origin, cb) => {
+    // Same-origin requests from our own UI come through without an Origin
+    // header — allow those. Everything else must exactly match an origin we
+    // bound to.
+    if (!origin) return cb(null, true)
+    const ok = allowedOrigins.some((o) => o.toLowerCase() === origin.toLowerCase())
+    cb(null, ok)
+  },
+  credentials: false,
+})
+registerOriginGuard(app, allowedOriginsGetter)
 await app.register(websocket)
 await app.register(skillRoutes)
 await app.register(manageRoutes)
@@ -138,6 +158,15 @@ const basePort = parseInt(process.env.PORT || '3456')
 try {
   const actualPort = await listenWithRetry(basePort)
   const url = `http://localhost:${actualPort}`
+
+  // Register the origins we accept for CORS + mutating requests. Both the
+  // loopback IP and the `localhost` hostname are legitimate: browsers open
+  // the auto-launched URL, `fetch()` from the UI, and user-pasted links all
+  // route to the same server but send different Origin headers.
+  allowedOrigins.push(
+    `http://localhost:${actualPort}`,
+    `http://127.0.0.1:${actualPort}`,
+  )
 
   // Purge expired trash entries on startup (best-effort, non-blocking failures)
   try {
