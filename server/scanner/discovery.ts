@@ -394,55 +394,68 @@ export async function fullScan(): Promise<ScanResult> {
     }
   }
 
+  // Discover plugin and project directories in parallel
+  const [pluginSkillDirs, discoveredProjects] = await Promise.all([
+    discoverPluginSkillDirs(),
+    discoverProjects(),
+  ])
+
+  const scanTasks: Promise<Skill[]>[] = []
+
   // 1. Global skills — loop over every agent's global paths
   for (const { agent, path: globalDir } of allAgentGlobalAbsPaths(homedir)) {
-    allSkills.push(
-      ...(await scanAndReport(`global:${agent.id}`, globalDir, 'global', agent.id)),
-    )
+    scanTasks.push(scanAndReport(`global:${agent.id}`, globalDir, 'global', agent.id))
   }
 
   // 2. Plugin skills — Claude Code only for now
-  const pluginSkillDirs = await discoverPluginSkillDirs()
   for (const pluginDir of pluginSkillDirs) {
     const pluginName = path.relative(path.join(homedir, '.claude', 'plugins'), pluginDir)
-    allSkills.push(
-      ...(await scanAndReport(`plugin:${pluginName}`, pluginDir, 'plugin', 'claude-code')),
-    )
+    scanTasks.push(scanAndReport(`plugin:${pluginName}`, pluginDir, 'plugin', 'claude-code'))
   }
 
   // 3. Project skills — for each project, scan every agent's project paths
-  const discoveredProjects = await discoverProjects()
   const projects: Project[] = []
 
   for (const proj of discoveredProjects) {
-    let projectTotal = 0
     for (const agent of AGENTS) {
       for (const rel of agent.projectPaths) {
         const skillsDir = path.join(proj.path, rel)
-        const projectSkills = await scanAndReport(
-          `project:${proj.name}:${agent.id}`,
-          skillsDir,
-          'project',
-          agent.id,
-          proj.name,
-          proj.path,
+        scanTasks.push(
+          scanAndReport(
+            `project:${proj.name}:${agent.id}`,
+            skillsDir,
+            'project',
+            agent.id,
+            proj.name,
+            proj.path,
+          ),
         )
-        allSkills.push(...projectSkills)
-        projectTotal += projectSkills.length
       }
     }
-    projects.push({
-      name: proj.name,
-      path: proj.path,
-      skillCount: projectTotal,
-    })
+    // skillCount populated after Promise.all resolves
+    projects.push({ name: proj.name, path: proj.path, skillCount: 0 })
   }
 
   // 4. Extra paths from SKILL_HUB_EXTRA_PATHS — agent unknown
   for (const extra of parseExtraPaths()) {
-    allSkills.push(
-      ...(await scanAndReport(`extra:${path.basename(extra)}`, extra, 'project', 'unknown')),
+    scanTasks.push(
+      scanAndReport(`extra:${path.basename(extra)}`, extra, 'project', 'unknown'),
     )
+  }
+
+  // Await all concurrently
+  const taskResults = await Promise.all(scanTasks)
+  for (const result of taskResults) {
+    allSkills.push(...result)
+  }
+
+  // Update project counts from the aggregated results
+  const countByPath = new Map<string, number>()
+  for (const s of allSkills) {
+    if (s.projectPath) countByPath.set(s.projectPath, (countByPath.get(s.projectPath) || 0) + 1)
+  }
+  for (const p of projects) {
+    p.skillCount = countByPath.get(p.path) || 0
   }
 
   // Deduplicate by realPath (symlinks can point to the same skill from multiple roots)
